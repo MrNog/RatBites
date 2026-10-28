@@ -12,13 +12,12 @@ ns.DEFAULTS = {
 	animation = "arc",
 	height = 70,
 	duration = 1.5,
-	boxScroll = "up",
-	boxAlign = "left",
-	boxMerge = 3,  -- sec: the same spell again within this joins its line as a total with "xN"
-	boxTime = 5,
+	-- each box: its spot and size, where new lines come in ("up" = at the bottom), text alignment,
+	-- merge (sec: the same spell again within this joins its line as a total with "xN"; 0 = off) and
+	-- how long a line stays (sec)
 	boxes = {
-		mine = { x = 300, y = -60, w = 200, h = 220 },
-		received = { x = -300, y = -60, w = 200, h = 220 },
+		mine = { x = 300, y = -60, w = 200, h = 220, scroll = "up", align = "left", merge = 3, time = 5 },
+		received = { x = -300, y = -60, w = 200, h = 220, scroll = "up", align = "left", merge = 0, time = 5 },
 	},
 	scale = 1,
 	iconScale = 1,  -- an icon's size against its number's text
@@ -94,6 +93,16 @@ ns.On("ADDON_LOADED", function(name)
 	-- output goes on nameplates or into My box; older choices (target only, centre screen) fold into nameplates
 	if ns.db.anchor ~= "box" then ns.db.anchor = "plates" end
 	ns.db.receivedOn = nil
+	-- box settings used to be shared by both boxes: each box starts from the shared choice
+	local db = ns.db
+	for _, key in ipairs({ "mine", "received" }) do
+		local b = db.boxes[key]
+		if db.boxScroll then b.scroll = db.boxScroll end
+		if db.boxAlign then b.align = db.boxAlign end
+		if db.boxTime then b.time = db.boxTime end
+		if db.boxMerge and key == "mine" then b.merge = db.boxMerge end
+	end
+	db.boxScroll, db.boxAlign, db.boxTime, db.boxMerge = nil, nil, nil, nil
 end)
 
 ns.On("PLAYER_LOGIN", function()

@@ -238,20 +238,25 @@ local function ShowPage(page, db, flag)
 end
 
 local function BoxesPage(page, db, flag)
-	local y = Section(page, TOP, "My box and Received box", true)
+	local y = Section(page, TOP, "Both boxes", true)
 	y = Action(page, y, "Move and resize boxes",
 		function() ns.SetBoxesUnlocked(not ns.BoxesUnlocked()) end,
 		function() return ns.BoxesUnlocked() and "Lock" or "Unlock" end)
-	y = Choice(page, y, "New lines come in at",
-		{ { "up", "The bottom" }, { "down", "The top" } },
-		flag(db, "boxScroll"))
-	y = Choice(page, y, "Text alignment",
-		{ { "left", "Left" }, { "center", "Center" }, { "right", "Right" } },
-		flag(db, "boxAlign"))
-	y = Choice(page, y, "My box merges repeats within",
-		{ { 0, "Off" }, { 0.5, "0.5 sec" }, { 1, "1 sec" }, { 2, "2 sec" }, { 3, "3 sec" } },
-		flag(db, "boxMerge"))
-	y = Stepper(page, y, "Each line stays", 2, 10, 1, function(v) return format("%ds", v) end, flag(db, "boxTime"))
+	-- the same four rows for each box, on its own settings
+	for _, def in ipairs({ { "mine", "My box: what you do" }, { "received", "Received box: what lands on you" } }) do
+		local box = db.boxes[def[1]]
+		y = Section(page, y, def[2])
+		y = Choice(page, y, "New lines come in at",
+			{ { "up", "The bottom" }, { "down", "The top" } },
+			flag(box, "scroll"))
+		y = Choice(page, y, "Text alignment",
+			{ { "left", "Left" }, { "center", "Center" }, { "right", "Right" } },
+			flag(box, "align"))
+		y = Choice(page, y, "Merge repeats within",
+			{ { 0, "Off" }, { 0.5, "0.5 sec" }, { 1, "1 sec" }, { 2, "2 sec" }, { 3, "3 sec" } },
+			flag(box, "merge"))
+		y = Stepper(page, y, "Each line stays", 2, 10, 1, function(v) return format("%ds", v) end, flag(box, "time"))
+	end
 	return y
 end
 

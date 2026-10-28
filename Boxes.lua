@@ -56,7 +56,7 @@ end
 -- left, the point is the box's left edge and icon then text run right from it; right, the text ends
 -- on the box's right edge with the icon before it.
 local function Align(box, line)
-	local align = ns.db.boxAlign
+	local align = ns.db.boxes[box.key].align
 	line.text:ClearAllPoints()
 	if align == "left" then
 		local icon = line.icon:IsShown() and line.icon:GetWidth() + 4 or 0
@@ -72,7 +72,7 @@ end
 
 -- newest line first: at the bottom when lines scroll up, at the top when they scroll down
 local function Layout(box)
-	local up = ns.db.boxScroll ~= "down"
+	local up = ns.db.boxes[box.key].scroll ~= "down"
 	local room, offset = box:GetHeight(), 0
 	for i = 1, #box.lines do
 		local line = box.lines[i]
@@ -93,7 +93,7 @@ local function Layout(box)
 end
 
 local function Fade(box)
-	local now, life = GetTime(), ns.db.boxTime
+	local now, life = GetTime(), ns.db.boxes[box.key].time
 	for i = #box.lines, 1, -1 do
 		local line = box.lines[i]
 		local age = now - line.at
@@ -160,9 +160,8 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	-- The same spell landing again within the merge time (an AoE on five mobs, a glyph's five
 	-- splashes, a proc on every swing) joins its line as one total with "x5", as xCT does, wherever
 	-- that line is, so repeats can't push other lines out of the box.
-	-- only My box merges: in the Received box every hit and heal on you keeps its own line
 	local last
-	local window = key == "mine" and db.boxMerge or 0
+	local window = db.boxes[key].merge
 	if icon and window > 0 then
 		for _, line in ipairs(box.lines) do
 			-- numbers of one kind (sign: damage "", heals "+", taken "-") add up whatever their colour,
