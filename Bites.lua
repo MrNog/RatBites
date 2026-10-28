@@ -29,6 +29,7 @@ local COLOR = {
 	healCrit = { 0.25, 1, 0.72, thick = true },
 	overheal = { 0.45, 0.62, 0.45 },
 	shield = { 0.55, 0.82, 1 },
+	buff = { 1, 0.9, 0.55 },
 	taken = { 0.88, 0.32, 0.27 },
 	takenCrit = { 1, 0.22, 0.45, thick = true },
 }
@@ -284,7 +285,14 @@ for _, id in ipairs({ 17, 47753, 58597, 64413 }) do  -- Power Word: Shield, Divi
 	local name = GetSpellInfo(id)
 	if name then ns.SHIELDS[name] = true end
 end
-local HEALING = { heal = true, overheal = true, shield = true }
+local HEALING = { heal = true, overheal = true, shield = true, buff = true }
+
+-- buffs you put on someone that show as a word with their icon when they land: name -> word
+local MARKS = {}
+do
+	local name = GetSpellInfo(53563)  -- Beacon of Light
+	if name then MARKS[name] = "Beacon" end
+end
 
 -- Val'anyr's shield (Protection of Ancient Kings) has a generic shield icon that reads like another
 -- class's shield, so it shows the mace itself (item 46017, Val'anyr, Hammer of Ancient Kings).
@@ -341,6 +349,10 @@ local function Read(event, ...)
 	elseif event == "SPELL_AURA_APPLIED" or event == "SPELL_AURA_REFRESH" then
 		local id, spellName, _, auraType = ...
 		if auraType == "BUFF" and ns.SHIELDS[spellName] then return "shield", nil, nil, ShieldIcon(id) end
+		-- a buff worth seeing land (Beacon of Light), as its short word, once when it goes on
+		if auraType == "BUFF" and event == "SPELL_AURA_APPLIED" and MARKS[spellName] then
+			return "buff", nil, nil, SpellIcon(id), MARKS[spellName]
+		end
 	elseif event == "SWING_MISSED" then
 		local missType = ...
 		return "miss", nil, nil, ATTACK_ICON, missType
@@ -359,6 +371,8 @@ local function Style(who, kind, amount, crit, miss)
 		label, color, size = _G[miss] or miss, COLOR.miss, SIZE * 0.8
 	elseif kind == "shield" then
 		label, color, size = amount and "+" .. Abbrev(amount) or "Shield", COLOR.shield, SIZE * 0.85
+	elseif kind == "buff" then
+		label, color, size = miss, COLOR.buff, SIZE * 0.85
 	else
 		label = Abbrev(amount)
 		if kind == "heal" or kind == "overheal" then
@@ -426,7 +440,7 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 	end
 end
 
-local function Received(kind, amount, crit, icon)
+local function Received(kind, amount, crit, icon, word)
 	local db, inc = ns.db, ns.db.incoming
 	if kind == "miss" then return end
 	if HEALING[kind] then
@@ -437,6 +451,8 @@ local function Received(kind, amount, crit, icon)
 	local label, color
 	if kind == "shield" then
 		label, color = amount and "+" .. Abbrev(amount) or "Shield", COLOR.shield
+	elseif kind == "buff" then
+		label, color = word, COLOR.buff
 	elseif not amount or amount <= 0 then
 		return
 	elseif kind == "overheal" then
@@ -485,7 +501,7 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	-- output is what you do to others; receiving is everything that lands on you, your own
 	-- self-heals and shields included
 	if toMe then
-		Received(kind, amount, crit, icon)
+		Received(kind, amount, crit, icon, miss)
 	else
 		Outgoing(who, destGUID, destName, kind, amount, crit, icon, miss)
 	end
