@@ -203,7 +203,12 @@ local function Move(t, elapsed)
 	local textScale = ns.db.scale
 	local scale = textScale
 	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
-	t:SetScale(scale)
+	-- set only when it changes: setting a frame's scale redraws its text, which shimmers if done
+	-- every frame
+	if scale ~= t.scaleNow then
+		t:SetScale(scale)
+		t.scaleNow = scale
+	end
 	local dx, dy = Path(t, p)
 	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
 	dx, dy = dx / scale, dy / scale
