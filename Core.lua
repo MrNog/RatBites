@@ -50,6 +50,42 @@ ns.DEFAULTS = {
 -- The profiles every account has; a profile is made from the defaults the first time it is used.
 ns.PROFILES = { "Default", "Healer", "DPS", "Tank" }
 
+-- How the Healer and DPS profiles start: only what differs from the defaults (Default and Tank start
+-- plain). A font from SharedMedia that isn't installed falls back to the game's own.
+ns.ROLE_DEFAULTS = {
+	Healer = {
+		route = {
+			dmg = { plate = true, mine = true },
+			heal = { plate = true, mine = true },
+			healMe = { me = true, recv = true },
+			dmgMe = { recv = false },
+		},
+		show = { shield = false },
+		joinShields = false,
+		font = "lsm:Blender Pro",
+		boxes = {
+			mine = { x = 354, y = -49, w = 230, h = 127, align = "right" },
+			received = { x = -357, y = -51, w = 239, h = 132 },
+		},
+	},
+	DPS = {
+		route = {
+			dmg = { plate = true, mine = true },
+			heal = { plate = false },
+			healMe = { mine = true, recv = true },
+			dmgMe = { recv = false },
+		},
+		classColorFor = "normal",
+		height = 50,
+		duration = 1.6,
+		font = "lsm:Blender Pro",
+		boxes = {
+			mine = { x = 360, y = -39, w = 241, h = 153, align = "right" },
+			received = { x = -361, y = -39, w = 242, h = 156, merge = 3 },
+		},
+	},
+}
+
 local function copyDefaults(src, dst)
 	for k, v in pairs(src) do
 		if type(v) == "table" then
@@ -152,9 +188,10 @@ end
 -- profiles: shared by the account; each character picks one, or one per talent spec
 --------------------------------------------------------------------------------
 
+-- A new (or reset) profile starts from its role's setup, then the defaults fill the rest.
 local function Profile(name)
 	local profiles = RatBitesDB.profiles
-	profiles[name] = profiles[name] or {}
+	profiles[name] = profiles[name] or deepCopy(ns.ROLE_DEFAULTS[name] or {})
 	copyDefaults(ns.DEFAULTS, profiles[name])
 	Upgrade(profiles[name])
 	return profiles[name]
