@@ -34,7 +34,8 @@ local function Text(parent, size, color)
 end
 
 -- a gold heading with a hairline to the column's end; first = the page's top one, without the gap
-local function Section(parent, y, text, first)
+-- note: one short grey line under the heading saying what the section is for
+local function Section(parent, y, text, first, note)
 	if not first then y = y - 22 end
 	local fs = Text(parent, 11, C.accentText)
 	fs:SetPoint("TOPLEFT", MARGIN, y)
@@ -43,6 +44,14 @@ local function Section(parent, y, text, first)
 	rule:SetPoint("LEFT", fs, "RIGHT", 8, 0)
 	rule:SetWidth(math.max(1, COL_W - fs:GetStringWidth() - 8))
 	stripe = false
+	if note then
+		local line = Text(parent, 13, C.textDim)
+		line:SetPoint("TOPLEFT", MARGIN, y - 20)
+		line:SetWidth(COL_W)
+		line:SetJustifyH("LEFT")
+		line:SetText(note)
+		return y - 46
+	end
 	return y - 26
 end
 
@@ -151,6 +160,38 @@ local function flag(...)
 	return function() return holder()[last] end, function(v) holder()[last] = v end
 end
 
+-- The Where grid: one row per kind of number, one column per place, a checkbox in every cell.
+local GRID_LABEL = 230   -- room for the row names
+local function Grid(parent, y, columns, rows)
+	local colW = (COL_W - GRID_LABEL) / #columns
+	local function centre(i) return MARGIN + GRID_LABEL + (i - 0.5) * colW end
+	for i, col in ipairs(columns) do
+		local head = Text(parent, 12, C.accentHi)
+		head:SetWidth(colW - 4)
+		head:SetJustifyH("CENTER")
+		head:SetPoint("BOTTOM", parent, "TOPLEFT", centre(i), y - 30)
+		head:SetText(col[2])
+	end
+	y = y - 34
+	for _, def in ipairs(rows) do
+		local row = Row(parent, y, def[2])
+		for i, col in ipairs(columns) do
+			local get, set = flag("route", def[1], col[1])
+			local cell = CreateFrame("Button", nil, row)
+			cell:SetWidth(30); cell:SetHeight(30)
+			cell:SetPoint("CENTER", parent, "TOPLEFT", centre(i), y - ROW_H / 2)
+			local box, tick = ns.CheckBox(cell, 20)
+			box:SetPoint("CENTER")
+			cell:SetScript("OnClick", function() set(not get()); Changed() end)
+			refreshers[#refreshers + 1] = function()
+				if get() then tick:Show() else tick:Hide() end
+			end
+		end
+		y = y - ROW_H
+	end
+	return y
+end
+
 local function Percent(v) return format("%d%%", v * 100 + 0.5) end
 
 -- The training-yard picture behind the settings, as RatStash's behind its windows. Its subject sits in
@@ -185,23 +226,13 @@ end
 --------------------------------------------------------------------------------
 
 local function GeneralPage(page)
-	local y = Section(page, TOP, "Numbers", true)
+	local y = Section(page, TOP, "RatBites", true, "Turn it on or off, and try it out without a fight.")
 	y = Check(page, y, "Enabled", flag("enabled"))
 	y = Action(page, y, "Test numbers",
 		function() ns.SetTestLoop(not ns.TestLooping()) end,
 		function() return ns.TestLooping() and "Stop" or "Start" end)
 	y = Check(page, y, "Hide the game's own numbers", flag("hideBlizzard"))
-	y = Section(page, y, "Output: what you do")
-	y = Choice(page, y, "Show on",
-		{ { "plates", "Nameplates" }, { "box", "My box" }, { "both", "Nameplates + My box" },
-			{ "healsplates", "Heals plates, dmg box" }, { "dmgplates", "Dmg plates, heals box" } },
-		flag("anchor"))
-	y = Choice(page, y, "Heals with no nameplate",
-		{ { "box", "My box" }, { "column", "Column" }, { "hide", "Hide" } },
-		flag("noPlateHeals"))
-	y = Section(page, y, "Receiving: what lands on you")
-	y = Check(page, y, "Also float over my character", flag("receivedFloat"))
-	y = Section(page, y, "Window")
+	y = Section(page, y, "Window", nil, "This settings window and the minimap button.")
 	y = Check(page, y, "Minimap button", flag("minimapButton"))
 	y = Check(page, y, "Background art", flag("bgOn"))
 	y = Stepper(page, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end, flag("bgArt"))
@@ -245,22 +276,31 @@ local function MotionPage(page)
 	return y
 end
 
-local function ShowPage(page)
-	local y = Section(page, TOP, "What you do", true)
+local function WherePage(page)
+	local y = Section(page, TOP, "Where each number goes", true,
+		"Tick every place you want it. Any mix works; nothing ticked hides it.")
+	y = Grid(page, y,
+		{ { "plate", "Over their nameplate" }, { "me", "Over me" }, { "mine", "My box" }, { "recv", "Received box" } },
+		{ { "dmg", "My damage (on enemies)" }, { "heal", "My heals (on others)" },
+			{ "healMe", "Heals on me (self-heals too)" }, { "dmgMe", "Damage on me" } })
+	y = Section(page, y, "No nameplate", nil, "Pets, totems and far-away players have no nameplate.")
+	y = Check(page, y, "Put it in My box instead", flag("noPlateToBox"))
+	return y
+end
+
+local function WhatPage(page)
+	local y = Section(page, TOP, "Your hits", true, "Untick what you don't want to see.")
 	y = Check(page, y, "Normal hits", flag("show", "normal"))
 	y = Check(page, y, "Critical hits", flag("show", "crit"))
 	y = Check(page, y, "Auto-attacks", flag("show", "swing"))
 	y = Check(page, y, "Spells and abilities", flag("show", "spell"))
 	y = Check(page, y, "Damage over time", flag("show", "dot"))
-	y = Check(page, y, "Heals and shields", flag("show", "heal"))
-	y = Choice(page, y, "Shields from heals",
-		{ { "join", "Join the heal" }, { "line", "Own line" }, { "hide", "Hide" } },
-		flag("healShields"))
-	y = Check(page, y, "Misses (dodge, parry ...)", flag("show", "miss"))
 	y = Check(page, y, "Pet damage", flag("show", "pet"))
-	y = Section(page, y, "What is done to you")
-	y = Check(page, y, "Damage taken", flag("incoming", "damage"))
-	y = Check(page, y, "Heals received", flag("incoming", "heals"))
+	y = Check(page, y, "Misses (dodge, parry ...)", flag("show", "miss"))
+	y = Section(page, y, "Your heals", nil, "Heals and the shields they make.")
+	y = Check(page, y, "Shields", flag("show", "shield"))
+	y = Check(page, y, "Join shields to the heal that made them", flag("joinShields"))
+	y = Check(page, y, "Overheal (dim)", flag("show", "overheal"))
 	return y
 end
 
@@ -383,9 +423,10 @@ end
 
 local PAGES = {
 	{ "general", "General", GeneralPage },
+	{ "where", "Where", WherePage },
+	{ "what", "What", WhatPage },
 	{ "look", "Look", LookPage },
 	{ "motion", "Motion", MotionPage },
-	{ "show", "Show", ShowPage },
 	{ "boxes", "Boxes", BoxesPage },
 	{ "profiles", "Profiles", ProfilesPage },
 }
@@ -400,7 +441,7 @@ end
 -- fill, a gold edge and gold text
 --------------------------------------------------------------------------------
 
-local TAB_H, TAB_PAD, TAB_GAP = 28, 18, 4
+local TAB_H, TAB_PAD, TAB_GAP = 28, 13, 3
 local TAB_X, TAB_Y = 90, -42   -- clear of the medallion over the top-left corner
 
 local function PaintTab(tab, on)

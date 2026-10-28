@@ -267,14 +267,8 @@ root:SetScript("OnUpdate", function()
 	end
 end)
 
--- where floating numbers go without a plate: above the screen's centre, your heals right of it, and
--- what lands on you over your character, whom the camera keeps at the screen's centre
-local function ScreenSpot()
-	return UIParent:GetWidth() / 2, UIParent:GetHeight() / 2 + 140
-end
-local function HealSpot()
-	return UIParent:GetWidth() / 2 + 160, UIParent:GetHeight() / 2 - 40
-end
+-- what floats "over me" rises from just above the screen's centre, where the camera keeps your
+-- character
 local function MeSpot()
 	return UIParent:GetWidth() / 2, UIParent:GetHeight() / 2 + 40
 end
@@ -414,59 +408,67 @@ local function Style(who, kind, amount, crit, miss)
 	return label, color, size, pop
 end
 
--- Show on: "plates" and "box" send both kinds one way; "healsplates" puts heals on plates and damage in
--- My box, "dmgplates" the other way round
--- "both" sends everything to My box and to the plates as well
-function ns.ToBox(heal)
-	local into = ns.db.anchor
-	return into == "box" or into == "both" or (into == "healsplates" and not heal) or (into == "dmgplates" and heal)
+--------------------------------------------------------------------------------
+-- where a number goes: the Where grid. Each row (dmg = your damage, heal = your heals on others,
+-- healMe / dmgMe = heals and damage landing on you) ticks any of: plate (over the unit's nameplate),
+-- me (over your character), mine (My box), recv (Received box). Nothing ticked hides that kind.
+--------------------------------------------------------------------------------
+
+local function Route(row, plate, name, label, color, size, icon, pop, amount, sign)
+	local db = ns.db
+	local r = db.route[row]
+	local onMe = row == "healMe" or row == "dmgMe"
+	-- your own character has no nameplate: for what lands on you, "over the nameplate" is over you
+	if r.plate and plate then
+		Show(plate, name, 0, 0, label, color, size, icon, pop)
+	elseif r.plate and not onMe and not r.mine and db.noPlateToBox then
+		-- wanted over a nameplate that isn't on screen (pets, totems, far away): My box instead
+		ns.BoxAdd("mine", label, color, size, icon, amount, sign)
+	end
+	if r.me or (onMe and r.plate) then
+		local x, y = MeSpot()
+		Show(nil, nil, x, y, label, color, size, icon, pop, true)
+	end
+	if r.mine then ns.BoxAdd("mine", label, color, size, icon, amount, sign) end
+	if r.recv then ns.BoxAdd("received", label, color, size, icon, amount, sign) end
+end
+
+local function Ticked(r) return r.plate or r.me or r.mine or r.recv end
+
+-- the What filters: kinds of hits, misses, pets, overheal and shields can each be turned off
+local function Wanted(who, kind, amount, crit)
+	local show = ns.db.show
+	if who == "pet" and not show.pet then return false end
+	if kind == "overheal" then return show.overheal end
+	if kind == "shield" then return show.shield end
+	if kind == "heal" or kind == "buff" then return true end
+	if not show[kind] then return false end
+	if amount and not show[crit and "crit" or "normal"] then return false end
+	return true
 end
 
 local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
-	local db, show = ns.db, ns.db.show
-	if who == "pet" and not show.pet then return end
-	if not show[HEALING[kind] and "heal" or kind] then return end
-	if amount then
-		if amount <= 0 or not show[crit and "crit" or "normal"] then return end
+	if amount and amount <= 0 then return end
+	if not Wanted(who, kind, amount, crit) then return end
+	local heal = HEALING[kind]
+	local row = heal and "heal" or "dmg"
+	local r = ns.db.route[row]
+	if not Ticked(r) then return end
+	local plate
+	if r.plate then
+		plate = ns.PlateFor(guid, name)
+		ns.lastDest, ns.lastDestPlate = name, plate
 	end
 	local label, color, size, pop = Style(who, kind, amount, crit, miss)
-	local both = db.anchor == "both"
-	if ns.ToBox(HEALING[kind]) then
-		ns.BoxAdd("mine", label, color, size, icon, amount, HEALING[kind] and "+" or "")
-		if not both then return end
-	end
-
-	-- Damage and heals go to the same place: the unit's nameplate (an invisible friendly plate still
-	-- counts). Without one, your target's damage goes above the screen's centre, and heals rise in
-	-- their own column right of it, so none is lost.
-	local plate = ns.PlateFor(guid, name)
-	ns.lastDest, ns.lastDestPlate = name, plate
-	if plate then
-		Show(plate, name, 0, 0, label, color, size, icon, pop)
-	elseif both then
-		-- no plate: My box already has it
-	elseif HEALING[kind] then
-		-- a heal on someone with no plate on screen: into My box, a column right of centre, or nowhere
-		if db.noPlateHeals == "box" then
-			ns.BoxAdd("mine", label, color, size, icon, amount, "+")
-		elseif db.noPlateHeals == "column" then
-			local x, y = HealSpot()
-			Show(nil, nil, x, y, label, color, size, icon, pop, true)
-		end
-	elseif UnitExists("target") and UnitGUID("target") == guid then
-		local x, y = ScreenSpot()
-		Show(nil, nil, x, y, label, color, size, icon, pop)
-	end
+	Route(row, plate, name, label, color, size, icon, pop, amount, heal and "+" or "")
 end
 
 local function Received(kind, amount, crit, icon, word)
-	local db, inc = ns.db, ns.db.incoming
 	if kind == "miss" then return end
-	if HEALING[kind] then
-		if not inc.heals then return end
-	elseif not inc.damage then
-		return
-	end
+	if (kind == "overheal" or kind == "shield") and not Wanted("player", kind) then return end
+	local heal = HEALING[kind]
+	local row = heal and "healMe" or "dmgMe"
+	if not Ticked(ns.db.route[row]) then return end
 	local label, color
 	if kind == "shield" then
 		label, color = amount and "+" .. Abbrev(amount) or "Shield", COLOR.shield
@@ -482,11 +484,7 @@ local function Received(kind, amount, crit, icon, word)
 		label, color = "-" .. Abbrev(amount), crit and COLOR.takenCrit or COLOR.taken
 	end
 	local size = crit and SIZE * 1.2 or SIZE * 0.9
-	ns.BoxAdd("received", label, color, size, icon, amount, HEALING[kind] and "+" or "-")
-	if db.receivedFloat then
-		local x, y = MeSpot()
-		Show(nil, nil, x, y, label, color, size, icon, crit and db.critStyle == "pop", true)
-	end
+	Route(row, nil, nil, label, color, size, icon, crit and ns.db.critStyle == "pop", amount, heal and "+" or "-")
 end
 
 ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFlags, destGUID, destName, _, ...)
@@ -516,13 +514,13 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 		amount = ShieldSize((...), destGUID)
 		-- a refresh only shows when it has a size to tell: Val'anyr refreshes on every heal
 		if event == "SPELL_AURA_REFRESH" and not amount then return end
-		-- a shield made by your heal (Val'anyr, Divine Aegis): joined to that heal's number, hidden,
-		-- or on its own line, as the "Shields from heals" setting says
+		-- a shield made by your heal (Val'anyr, Divine Aegis): joined to that heal's number, or on
+		-- its own line, as the What tab says
 		if amount and HEAL_SHARE[(...)] then
-			if db.healShields == "hide" then return end
+			if not db.show.shield then return end
 			local h = lastHeal[destGUID]
 			local el = h and h.el
-			if db.healShields == "join" and el and el.serial == h.serial and el:IsShown() then
+			if db.joinShields and el and el.serial == h.serial and el:IsShown() then
 				ns.JoinShield(el, amount)
 				return
 			end
@@ -588,33 +586,21 @@ function ns.Test()
 	local db = ns.db
 	local guid, name = UnitGUID("target"), UnitName("target")
 	local plate = guid and ns.PlateFor(guid, name)
-	local x, y = ScreenSpot()
-	-- label, colour, size, pop
+	local critSize = SIZE * (db.critStyle == "big" and 1.5 or db.critStyle == "pop" and 1.3 or 1)
+	-- label, colour, size, pop, Where row
 	local hits = {
-		{ "1234", COLOR.normal, SIZE, false },
-		{ Abbrev(2331), COLOR.big, SIZE * 1.15, false },
-		{ Abbrev(12431), COLOR.crit, SIZE * (db.critStyle == "big" and 1.5 or db.critStyle == "pop" and 1.3 or 1), db.critStyle == "pop" },
-		{ DODGE, COLOR.miss, SIZE * 0.8, false },
-		{ "+" .. Abbrev(812), COLOR.heal, SIZE, false },
-		{ "Shield", COLOR.shield, SIZE * 0.85, false },
+		{ "1234", COLOR.normal, SIZE, false, "dmg" },
+		{ Abbrev(2331), COLOR.big, SIZE * 1.15, false, "dmg" },
+		{ Abbrev(12431), COLOR.crit, critSize, db.critStyle == "pop", "dmg" },
+		{ DODGE, COLOR.miss, SIZE * 0.8, false, "dmg" },
+		{ "+" .. Abbrev(812), COLOR.heal, SIZE, false, "heal" },
+		{ "Shield", COLOR.shield, SIZE * 0.85, false, "heal" },
+		{ "-" .. Abbrev(640), COLOR.taken, SIZE * 0.9, false, "dmgMe" },
+		{ "+" .. Abbrev(1923), COLOR.heal, SIZE * 0.9, false, "healMe" },
 	}
 	for i, h in ipairs(hits) do
-		local heal = h[2] == COLOR.heal or h[2] == COLOR.shield
 		table.insert(queued, { at = GetTime() + (i - 1) * 0.25, fn = function()
-			if ns.ToBox(heal) then
-				ns.BoxAdd("mine", h[1], h[2], h[3], pick())
-			else
-				Show(plate, name, x, y, h[1], h[2], h[3], pick(), h[4])
-			end
-		end })
-	end
-	for i, r in ipairs({ { "-" .. Abbrev(640), COLOR.taken }, { "+" .. Abbrev(1923), COLOR.heal } }) do
-		table.insert(queued, { at = GetTime() + 0.4 + (i - 1) * 0.25, fn = function()
-			ns.BoxAdd("received", r[1], r[2], SIZE * 0.9, ATTACK_ICON)
-			if db.receivedFloat then
-				local mx, my = MeSpot()
-				Show(nil, nil, mx, my, r[1], r[2], SIZE * 0.9, ATTACK_ICON, false, true)
-			end
+			Route(h[5], plate, name, h[1], h[2], h[3], pick(), h[4])
 		end })
 	end
 end

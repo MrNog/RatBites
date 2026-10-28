@@ -1,19 +1,24 @@
 local ADDON, ns = ...
 
 -- One profile's settings. ns.db is the active profile.
--- anchor (output: your damage and heals on others): "plates" = on the unit's nameplate, "box" = My box,
--- "both" = nameplates and My box, "healsplates" = heals on plates and damage in My box, "dmgplates" =
--- the other way round
--- what lands on you always goes to the Received box; receivedFloat also floats it over your character
+-- route: the Where grid. Rows dmg (your damage), heal (your heals on others), healMe and dmgMe (heals
+-- and damage landing on you); each ticks plate (over the unit's nameplate, or over you for what lands
+-- on you), me (over your character), mine (My box) and recv (Received box)
+-- noPlateToBox: a number wanted over a nameplate that isn't on screen goes to My box instead
+-- joinShields: a shield your heal makes (Val'anyr, Divine Aegis) joins that heal's number
 -- animation: "arc", "rise", "stay", "fountain" or "fall" (Bites.lua's Path)
 -- critStyle: "pop" = starts large and settles, "big" = larger, "plain" = colour only
 -- numbers: "short" = 12.4k, "full" = 12,431, "raw" = 12431
 ns.DEFAULTS = {
 	enabled = true,
-	anchor = "plates",
-	receivedFloat = false,
-	noPlateHeals = "box",  -- your heals on someone with no plate on screen: "box", "column" or "hide"
-	healShields = "join",  -- shields your heals make (Val'anyr, Divine Aegis): "join" the heal, "line" of their own, "hide"
+	route = {
+		dmg = { plate = true, me = false, mine = false, recv = false },
+		heal = { plate = true, me = false, mine = false, recv = false },
+		healMe = { plate = false, me = false, mine = false, recv = true },
+		dmgMe = { plate = false, me = false, mine = false, recv = true },
+	},
+	noPlateToBox = true,
+	joinShields = true,
 	animation = "arc",
 	height = 70,
 	duration = 1.5,
@@ -33,8 +38,8 @@ ns.DEFAULTS = {
 	critStyle = "pop",
 	spread = "normal",
 	numbers = "short",
-	show = { normal = true, crit = true, swing = true, spell = true, dot = true, miss = true, pet = true, heal = true },
-	incoming = { damage = false, heals = false },
+	show = { normal = true, crit = true, swing = true, spell = true, dot = true, miss = true, pet = true,
+		shield = true, overheal = true },
 	hideBlizzard = true,
 	bgOn = true,
 	bgArt = 0.5,
@@ -99,13 +104,34 @@ function ns.ApplyBlizzardText()
 	end
 end
 
--- Older settings, read into a profile: output on nameplates or in My box (target only and centre
--- screen fold into nameplates); box settings once shared by both boxes; class colour once two
--- checkboxes (normal hits win when both were on, so crits keep standing out).
+-- Before the Where grid, a profile said where numbers go with "Show on" (anchor), "Heals with no
+-- nameplate", the received checkboxes and "Shields from heals": read once into the grid.
+local function UpgradeRoute(db)
+	if db.anchor == nil and db.incoming == nil then return end
+	local r = db.route
+	local anchor = db.anchor or "plates"
+	r.dmg.plate = anchor == "plates" or anchor == "both" or anchor == "dmgplates" or anchor == "target" or anchor == "screen"
+	r.dmg.mine = anchor == "box" or anchor == "both" or anchor == "healsplates"
+	r.heal.plate = anchor == "plates" or anchor == "both" or anchor == "healsplates" or anchor == "target" or anchor == "screen"
+	r.heal.mine = anchor == "box" or anchor == "both" or anchor == "dmgplates"
+	if db.show and db.show.heal == false then
+		r.heal.plate, r.heal.mine = false, false
+	end
+	db.noPlateToBox = db.noPlateHeals ~= "hide"
+	local inc = db.incoming or {}
+	r.healMe.recv, r.healMe.me = inc.heals and true or false, (inc.heals and db.receivedFloat) and true or false
+	r.dmgMe.recv, r.dmgMe.me = inc.damage and true or false, (inc.damage and db.receivedFloat) and true or false
+	if db.healShields == "hide" then db.show.shield = false end
+	db.joinShields = db.healShields ~= "line"
+	db.anchor, db.noPlateHeals, db.incoming, db.receivedFloat, db.healShields, db.receivedOn = nil, nil, nil, nil, nil, nil
+	if db.show then db.show.heal = nil end
+end
+
+-- Older settings, read into a profile: where numbers go (into the Where grid); box settings once
+-- shared by both boxes; class colour once two checkboxes (normal hits win when both were on, so
+-- crits keep standing out).
 local function Upgrade(db)
-	local anchors = { plates = true, box = true, both = true, healsplates = true, dmgplates = true }
-	if not anchors[db.anchor] then db.anchor = "plates" end
-	db.receivedOn = nil
+	UpgradeRoute(db)
 	for _, key in ipairs({ "mine", "received" }) do
 		local b = db.boxes[key]
 		if db.boxScroll then b.scroll = db.boxScroll end
