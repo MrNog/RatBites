@@ -199,13 +199,6 @@ end
 -- goes away mid-flight leaves the text where it was.
 local START_GAP = 12  -- how far above the plate a number starts
 
--- What a number starts above: the plate, or with ElvUI's plates the row of your debuffs on it, so
--- the number doesn't sit on top of the icons.
-local function PlateTop(plate)
-	local debuffs = plate.UnitFrame and plate.UnitFrame.Debuffs
-	if debuffs and debuffs:IsShown() and debuffs[1] and debuffs[1]:IsShown() then return debuffs end
-	return plate
-end
 local function Move(t, elapsed)
 	local p = elapsed / t.duration
 	local textScale = ns.db.scale
@@ -217,9 +210,8 @@ local function Move(t, elapsed)
 	dx, dy = dx / scale, dy / scale
 	t:ClearAllPoints()
 	if t.plate and ns.PlateShows(t.plate, t.name) then
-		local base = PlateTop(t.plate)
-		t:SetPoint("CENTER", base, "TOP", dx, dy)
-		local x, top = t.plate:GetCenter(), base:GetTop()
+		t:SetPoint("CENTER", t.plate, "TOP", dx, dy)
+		local x, top = t.plate:GetCenter(), t.plate:GetTop()
 		if x and top then
 			local s = t.plate:GetEffectiveScale() / UIParent:GetEffectiveScale()
 			t.x, t.y = x * s, top * s
