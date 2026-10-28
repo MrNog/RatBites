@@ -86,6 +86,7 @@ local function Abbrev(v)
 	end
 	return tostring(v)
 end
+ns.Abbrev = Abbrev
 
 -- A hit well above your recent ones is a big hit: compared with the last 8 normal hits of the last
 -- 30 sec, once there are at least 3.
@@ -393,7 +394,7 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 	end
 	local label, color, size, pop = Style(who, kind, amount, crit, miss)
 	if db.anchor == "box" then
-		ns.BoxAdd("mine", label, color, size, icon)
+		ns.BoxAdd("mine", label, color, size, icon, amount, HEALING[kind] and "+" or "")
 		return
 	end
 
@@ -434,7 +435,7 @@ local function Received(kind, amount, crit, icon)
 		label, color = "-" .. Abbrev(amount), crit and COLOR.takenCrit or COLOR.taken
 	end
 	local size = crit and SIZE * 1.2 or SIZE * 0.9
-	ns.BoxAdd("received", label, color, size, icon)
+	ns.BoxAdd("received", label, color, size, icon, amount, HEALING[kind] and "+" or "-")
 	if db.receivedFloat then
 		local x, y = MeSpot()
 		Show(nil, nil, x, y, label, color, size, icon, crit and db.critStyle == "pop", true)

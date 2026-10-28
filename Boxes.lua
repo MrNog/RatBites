@@ -7,7 +7,7 @@ local ADDON, ns = ...
 
 local LINE_GAP = 4
 local FADE = 0.5   -- a line fades over its last half second
-local MERGE_TIME = 0.4
+local MERGE_TIME = 0.5
 local EDGE_PAD = 8  -- left- or right-aligned lines keep this far from the box's side
 local NAMES = { mine = "My box", received = "Received box" }
 
@@ -152,23 +152,31 @@ local function Create(key)
 end
 
 -- one line into a box: "mine" or "received"
-function ns.BoxAdd(key, label, color, size, icon)
+-- amount and sign: the number behind the label ("+" for heals, "-" for damage taken), so merged
+-- lines can add up; words such as "Dodge" or "Shield" come without one
+function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	local box = boxes[key]
 	if not box then return end
 	local db = ns.db
-	-- The same spell landing again right away in the same colour (a glyph's five splashes, a point or
-	-- two apart) joins the line before it as "x5", keeping that line's number, so a burst can't push
-	-- the heal that caused it out of the box.
+	-- The same spell landing again right away in the same colour (an AoE on five mobs, a glyph's five
+	-- splashes) joins the line before it as one total with "x5", as xCT does, so a burst can't push
+	-- the line that caused it out of the box.
 	local last = box.lines[1]
 	if last and icon and last.iconPath == icon and last.color == color and GetTime() - last.at < MERGE_TIME then
 		last.count = last.count + 1
-		last.text:SetText(last.label .. " x" .. last.count)
+		if amount and last.total then
+			last.total = last.total + amount
+			last.text:SetText((last.sign or "") .. ns.Abbrev(last.total) .. " x" .. last.count)
+		else
+			last.text:SetText(last.label .. " x" .. last.count)
+		end
 		last.at = GetTime()
 		last:SetAlpha(1)
 		return
 	end
 	local line = table.remove(box.pool) or NewLine(box)
 	line.label, line.iconPath, line.color, line.count = label, icon, color, 1
+	line.total, line.sign = amount, sign
 	size = size * db.scale
 	line.text:SetFont(ns.FontPath(), size, color.thick and "THICKOUTLINE" or "OUTLINE")
 	line.text:SetText(label)
