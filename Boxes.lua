@@ -160,8 +160,9 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	-- The same spell landing again within the merge time (an AoE on five mobs, a glyph's five
 	-- splashes, a proc on every swing) joins its line as one total with "x5", as xCT does, wherever
 	-- that line is, so repeats can't push other lines out of the box.
+	-- only My box merges: in the Received box every hit and heal on you keeps its own line
 	local last
-	local window = db.boxMerge
+	local window = key == "mine" and db.boxMerge or 0
 	if icon and window > 0 then
 		for _, line in ipairs(box.lines) do
 			-- numbers of one kind (sign: damage "", heals "+", taken "-") add up whatever their colour,

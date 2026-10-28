@@ -248,7 +248,7 @@ local function BoxesPage(page, db, flag)
 	y = Choice(page, y, "Text alignment",
 		{ { "left", "Left" }, { "center", "Center" }, { "right", "Right" } },
 		flag(db, "boxAlign"))
-	y = Choice(page, y, "Merge repeats within",
+	y = Choice(page, y, "My box merges repeats within",
 		{ { 0, "Off" }, { 0.5, "0.5 sec" }, { 1, "1 sec" }, { 2, "2 sec" }, { 3, "3 sec" } },
 		flag(db, "boxMerge"))
 	y = Stepper(page, y, "Each line stays", 2, 10, 1, function(v) return format("%ds", v) end, flag(db, "boxTime"))
