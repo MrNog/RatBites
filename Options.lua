@@ -288,6 +288,41 @@ end
 
 -- Profiles live in Core.lua; this page picks this character's, and one per talent spec when dual
 -- spec switching is on.
+-- A small window asking before something that replaces a whole profile: the question, then the
+-- action's button and Cancel. Esc cancels too.
+local confirm
+local function Confirm(question, yes, onYes)
+	if not confirm then
+		confirm = CreateFrame("Frame", "RatBitesConfirm", UIParent)
+		confirm:SetWidth(380); confirm:SetHeight(140)
+		confirm:SetFrameStrata("FULLSCREEN_DIALOG")
+		confirm:SetToplevel(true)
+		confirm:EnableMouse(true)
+		confirm:SetPoint("CENTER", 0, 120)
+		ns.SkinWindow(confirm)
+		tinsert(UISpecialFrames, "RatBitesConfirm")
+		local _, title = ns.TitleBar(confirm, 30)
+		title:SetText("RatBites")
+		confirm.text = Text(confirm, 14)
+		confirm.text:SetPoint("TOPLEFT", 24, -46)
+		confirm.text:SetPoint("RIGHT", -24, 0)
+		confirm.text:SetJustifyH("CENTER")
+		confirm.no = ns.RedButton(confirm, "Cancel", 120, 22)
+		confirm.no:SetPoint("BOTTOMRIGHT", confirm, "BOTTOM", -6, 20)
+		confirm.no:SetScript("OnClick", function() confirm:Hide() end)
+		confirm.yes = ns.RedButton(confirm, "", 120, 22)
+		confirm.yes:SetPoint("BOTTOMLEFT", confirm, "BOTTOM", 6, 20)
+	end
+	confirm.text:SetText(question)
+	confirm.yes:SetText(yes)
+	confirm.yes:SetScript("OnClick", function()
+		confirm:Hide()
+		onYes()
+		Changed()
+	end)
+	confirm:Show()
+end
+
 local function ProfilesPage(page)
 	local names = {}
 	for _, name in ipairs(ns.PROFILES) do names[#names + 1] = { name, name } end
@@ -325,8 +360,20 @@ local function ProfilesPage(page)
 	y = Section(page, y, "Edit the profile in use")
 	y = Choice(page, y, "Copy settings from", copyFrom,
 		function() return "none" end,
-		function(v) if v ~= "none" then ns.CopyProfile(v) end end)
-	y = Action(page, y, "Reset to defaults", ns.ResetProfile, function() return "Reset" end)
+		function(v)
+			if v == "none" then return end
+			local name = ns.ActiveProfile()
+			if v == name then
+				ns.CopyProfile(v)  -- says it is already the one in use
+				return
+			end
+			Confirm("Copy " .. v .. "'s settings into " .. name .. "?\nEverything in " .. name .. " is replaced.",
+				"Copy", function() ns.CopyProfile(v) end)
+		end)
+	y = Action(page, y, "Reset to defaults", function()
+		local name = ns.ActiveProfile()
+		Confirm("Reset " .. name .. " to the default settings?", "Reset", ns.ResetProfile)
+	end, function() return "Reset" end)
 	y = Action(page, y, "Send it to a friend", function() ns.OpenShare("export") end,
 		function() return "Export" end)
 	y = Action(page, y, "Load a friend's profile into it", function() ns.OpenShare("import") end,
