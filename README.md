@@ -11,7 +11,6 @@ Damage and heal numbers with spell icons, right on each nameplate. For World of 
   to the Received box, and can also float over your character.
 - Pick what shows: normal or critical hits, auto-attacks, abilities, damage over time, heals, misses,
   pet damage.
-- Optional incoming damage and heals, left of the screen's centre.
 - Turns the game's own floating numbers off while it runs, and puts them back when you disable it.
 
 ## Commands
