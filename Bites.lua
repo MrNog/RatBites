@@ -199,7 +199,6 @@ end
 -- goes away mid-flight leaves the text where it was.
 local START_GAP = 12  -- how far above the plate a number starts
 local DOT_LINGER = 4  -- sec a DoT's number stays on its plate after a tick
-local LANE_GAP = 8    -- how far right of the plate the DoT lines start
 
 -- What a number starts above: the plate, or with ElvUI's plates the row of your debuffs on it, so
 -- the number doesn't sit on top of the icons.
@@ -218,24 +217,6 @@ local function Move(t, elapsed)
 	local scale = textScale
 	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
 	t:SetScale(scale)
-	-- a DoT's number stands still on its own line beside the plate's right end, lines going up
-	if t.lane then
-		local up = t.lane * (t.size + 6) * textScale
-		t:ClearAllPoints()
-		if t.plate and ns.PlateShows(t.plate, t.name) then
-			t:SetPoint("CENTER", t.plate, "RIGHT", LANE_GAP / scale, up / scale)
-			local right, _, y = t.plate:GetRight(), t.plate:GetCenter()
-			if right and y then
-				local s = t.plate:GetEffectiveScale() / UIParent:GetEffectiveScale()
-				t.x, t.y = right * s + LANE_GAP, y * s + up
-			end
-		else
-			t.plate = nil
-			t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x / scale, t.y / scale)
-		end
-		t:SetAlpha(left < fadeLen and left / fadeLen or 1)
-		return
-	end
 	local dx, dy = Path(t, p)
 	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
 	dx, dy = dx / scale, dy / scale
@@ -287,24 +268,7 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, ti
 		t.icon:Hide(); t.edge:Hide()
 	end
 	t.plate, t.name, t.x, t.y = plate, name, x, y
-	t.label, t.shield, t.serial, t.size = label, nil, ns.NextSerial(), size
-	-- A DoT on a plate takes the first free line beside it, its text running right from its icon;
-	-- every other number is centred on its spot.
-	t.lane = nil
-	t.text:ClearAllPoints()
-	if tick and plate then
-		local used = {}
-		for _, o in ipairs(active) do
-			if o.lane and o.plate == plate then used[o.lane] = true end
-		end
-		local lane = 0
-		while used[lane] do lane = lane + 1 end
-		t.lane = lane
-		local iconRoom = t.icon:IsShown() and SIZE * db.iconScale + 4 or 0
-		t.text:SetPoint("LEFT", t, "CENTER", iconRoom, 0)
-	else
-		t.text:SetPoint("CENTER")
-	end
+	t.label, t.shield, t.serial = label, nil, ns.NextSerial()
 	ns.lastShown = t
 	t.straight = column
 	t.anim = column and "rise" or db.animation
