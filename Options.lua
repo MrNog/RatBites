@@ -365,6 +365,67 @@ local function Confirm(question, yes, onYes)
 	confirm:Show()
 end
 
+-- Your spells, as RatBites has seen them, in a list that scrolls with the mouse wheel: a tick shows a
+-- spell, untick it to hide it. The list is read again each time the window refreshes.
+local SPELL_ROWS = 10
+
+local function SpellsPage(page)
+	local y = Section(page, TOP, "Small numbers", true, "Hide your small hits and heals. Crits always show.")
+	y = Choice(page, y, "Hide numbers below",
+		{ { 0, "Off" }, { 250, "250" }, { 500, "500" }, { 1000, "1,000" }, { 2000, "2,000" }, { 5000, "5,000" } },
+		flag("minAmount"))
+	y = Section(page, y, "Your spells", nil, "Untick a spell to hide it. A spell shows up here once you've used it.")
+	local empty = Text(page, 13, C.textDim)
+	empty:SetPoint("TOPLEFT", MARGIN + 2, y - 10)
+	empty:SetText("Nothing yet: cast a few spells and they'll be listed here.")
+	local rows, list, first = {}, {}, 1
+	local function fill()
+		wipe(list)
+		for name, icon in pairs(ns.db.seen) do list[#list + 1] = { name, icon } end
+		table.sort(list, function(a, b) return a[1] < b[1] end)
+		first = math.max(1, math.min(first, #list - SPELL_ROWS + 1))
+		if #list == 0 then empty:Show() else empty:Hide() end
+		for i, row in ipairs(rows) do
+			local entry = list[first + i - 1]
+			if entry then
+				row.spell = entry[1]
+				row.label:SetText(entry[1])
+				row.icon:SetTexture(type(entry[2]) == "string" and entry[2] or nil)
+				if ns.db.hideSpells[entry[1]] then row.tick:Hide() else row.tick:Show() end
+				row:Show()
+			else
+				row:Hide()
+			end
+		end
+	end
+	for i = 1, SPELL_ROWS do
+		local row = Row(page, y, "")
+		row.label:ClearAllPoints()
+		row.label:SetPoint("LEFT", 42, 0)
+		row.icon = row:CreateTexture(nil, "ARTWORK")
+		row.icon:SetWidth(22); row.icon:SetHeight(22)
+		row.icon:SetPoint("LEFT", 10, 0)
+		row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+		local box, tick = ns.CheckBox(row, 20)
+		box:SetPoint("RIGHT", -8, 0)
+		row.tick = tick
+		row:SetScript("OnClick", function(self)
+			local hide = ns.db.hideSpells
+			hide[self.spell] = not hide[self.spell] or nil
+			fill()
+		end)
+		row:EnableMouseWheel(true)
+		row:SetScript("OnMouseWheel", function(_, delta)
+			first = first - delta * 2
+			fill()
+		end)
+		rows[i] = row
+		y = y - ROW_H
+	end
+	refreshers[#refreshers + 1] = fill
+	return y
+end
+
 local function ProfilesPage(page)
 	local names = {}
 	for _, name in ipairs(ns.PROFILES) do names[#names + 1] = { name, name } end
@@ -427,6 +488,7 @@ local PAGES = {
 	{ "general", "General", GeneralPage },
 	{ "where", "Where", WherePage },
 	{ "what", "What", WhatPage },
+	{ "spells", "Spells", SpellsPage },
 	{ "look", "Look", LookPage },
 	{ "motion", "Motion", MotionPage },
 	{ "boxes", "Boxes", BoxesPage },

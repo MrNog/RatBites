@@ -33,6 +33,9 @@ ns.DEFAULTS = {
 	iconScale = 1,  -- an icon's size against its number's text
 	font = "friz",
 	icons = true,
+	minAmount = 0,     -- numbers below this don't show (crits always do)
+	seen = {},         -- spell name -> icon: your spells RatBites has shown, for the Spells tab
+	hideSpells = {},   -- spell name -> true: the ones you unticked there
 	classColorFor = "off",  -- "normal" = your normal damage, "crit" = your crits; the other keeps its colour
 	bigGold = true,
 	critStyle = "pop",
