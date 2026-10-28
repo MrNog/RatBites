@@ -198,6 +198,14 @@ end
 -- On a plate the spot is kept up to date while the plate still shows the same name, so a plate that
 -- goes away mid-flight leaves the text where it was.
 local START_GAP = 12  -- how far above the plate a number starts
+
+-- What a number starts above: the plate, or with ElvUI's plates the row of your debuffs on it, so
+-- the number doesn't sit on top of the icons.
+local function PlateTop(plate)
+	local debuffs = plate.UnitFrame and plate.UnitFrame.Debuffs
+	if debuffs and debuffs:IsShown() and debuffs[1] and debuffs[1]:IsShown() then return debuffs end
+	return plate
+end
 local function Move(t, elapsed)
 	local p = elapsed / t.duration
 	local textScale = ns.db.scale
@@ -209,8 +217,9 @@ local function Move(t, elapsed)
 	dx, dy = dx / scale, dy / scale
 	t:ClearAllPoints()
 	if t.plate and ns.PlateShows(t.plate, t.name) then
-		t:SetPoint("CENTER", t.plate, "TOP", dx, dy)
-		local x, top = t.plate:GetCenter(), t.plate:GetTop()
+		local base = PlateTop(t.plate)
+		t:SetPoint("CENTER", base, "TOP", dx, dy)
+		local x, top = t.plate:GetCenter(), base:GetTop()
 		if x and top then
 			local s = t.plate:GetEffectiveScale() / UIParent:GetEffectiveScale()
 			t.x, t.y = x * s, top * s
@@ -223,10 +232,24 @@ local function Move(t, elapsed)
 end
 
 -- plate: the nameplate to ride (nil: the spot x, y in UIParent units); column: a fixed spot's
--- straight column, which always rises
-local function Show(plate, name, x, y, label, color, size, icon, pop, column)
+-- straight column, which always rises; tick: a DoT tick's amount, so the next tick of the same DoT
+-- on the same plate joins this number ("1864 x2") and pops it again instead of making another
+local function Show(plate, name, x, y, label, color, size, icon, pop, column, tick)
+	if tick and plate then
+		for _, t in ipairs(active) do
+			if t.tick and t.plate == plate and t.iconPath == icon and t.color == color then
+				t.count, t.tick = t.count + 1, t.tick + tick
+				t.label = Abbrev(t.tick) .. " x" .. t.count
+				t.text:SetText(t.label)
+				t.start, t.pop = GetTime(), true
+				ns.lastShown = t
+				return
+			end
+		end
+	end
 	if #active >= MAX_TEXTS then Release(1) end
 	local t = Acquire()
+	t.tick, t.count, t.iconPath, t.color = tick, 1, icon, color
 	local db = ns.db
 	t.text:SetFont(ns.FontPath(), size, color.thick and "THICKOUTLINE" or "OUTLINE")
 	t.text:SetText(label)
@@ -397,7 +420,7 @@ local function Style(who, kind, amount, crit, miss)
 		elseif db.classColorFor == "normal" and ns.classColor then
 			color = ns.classColor
 		end
-		if kind == "dot" then size = SIZE * 0.8 end
+		if kind == "dot" then size = SIZE * 0.9 end
 		if crit then
 			if kind ~= "overheal" and db.classColorFor == "crit" and ns.classCrit then
 				color = ns.classCrit
@@ -422,13 +445,14 @@ end
 -- me (over your character), mine (My box), recv (Received box). Nothing ticked hides that kind.
 --------------------------------------------------------------------------------
 
-local function Route(row, plate, name, label, color, size, icon, pop, amount, sign)
+-- tick: a DoT tick's amount, which joins the same DoT's number on that plate (see Show)
+local function Route(row, plate, name, label, color, size, icon, pop, amount, sign, tick)
 	local db = ns.db
 	local r = db.route[row]
 	local onMe = row == "healMe" or row == "dmgMe"
 	-- your own character has no nameplate: for what lands on you, "over the nameplate" is over you
 	if r.plate and plate then
-		Show(plate, name, 0, 0, label, color, size, icon, pop)
+		Show(plate, name, 0, 0, label, color, size, icon, pop, nil, tick)
 	elseif r.plate and not onMe and not r.mine and db.noPlateToBox then
 		-- wanted over a nameplate that isn't on screen (pets, totems, far away): My box instead
 		ns.BoxAdd("mine", label, color, size, icon, amount, sign)
@@ -468,7 +492,7 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 		ns.lastDest, ns.lastDestPlate = name, plate
 	end
 	local label, color, size, pop = Style(who, kind, amount, crit, miss)
-	Route(row, plate, name, label, color, size, icon, pop, amount, heal and "+" or "")
+	Route(row, plate, name, label, color, size, icon, pop, amount, heal and "+" or "", kind == "dot" and amount or nil)
 end
 
 local function Received(kind, amount, crit, icon, word)
@@ -581,8 +605,16 @@ end)
 ns.On("PLAYER_LOGIN", function()
 	local c = RAID_CLASS_COLORS[select(2, UnitClass("player"))]
 	if c then
-		ns.classColor = { c.r, c.g, c.b }
-		ns.classCrit = { c.r, c.g, c.b, thick = true }
+		-- a dark class colour (Death Knight red, Shaman blue) is lifted toward white until it reads
+		-- on a dark fight, keeping its hue
+		local r, g, b = c.r, c.g, c.b
+		local light = 0.3 * r + 0.59 * g + 0.11 * b
+		if light < 0.55 then
+			local lift = (0.55 - light) / (1 - light)
+			r, g, b = r + (1 - r) * lift, g + (1 - g) * lift, b + (1 - b) * lift
+		end
+		ns.classColor = { r, g, b }
+		ns.classCrit = { r, g, b, thick = true }
 	end
 end)
 

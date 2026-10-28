@@ -6,6 +6,7 @@ local ADDON, ns = ...
 -- is the one the client draws at full alpha, and other mobs keep the plate they were last matched to.
 
 local plates = {}     -- plate -> its name font string
+local highlights = {} -- plate -> the glow the client shows on it while the unit is under the mouse
 local seen = 0        -- WorldFrame children already looked at
 local lastPlate = {}  -- GUID -> plate it was last matched to
 
@@ -32,6 +33,9 @@ local function Scan()
 		if f and IsPlate(f) then
 			local name = NameText(f)
 			if name then plates[f] = name end
+			-- the sixth region: threat glow, border, cast border, shield, spell icon, highlight
+			local glow = select(6, f:GetRegions())
+			if glow and glow:GetObjectType() == "Texture" then highlights[f] = glow end
 		end
 	end
 	seen = count
@@ -70,6 +74,39 @@ function ns.PlateFor(guid, name)
 	if pick then lastPlate[guid] = pick end
 	return pick
 end
+
+-- Mobs sharing a name ("Dummy") can't be told apart by it, so a mob's plate is learned when you
+-- target it (its plate is drawn apart) or put the mouse on it (its plate lights up). The client
+-- updates the plates a moment after the event, so they are read on the next frame.
+local learn = CreateFrame("Frame")
+learn:Hide()
+local pending = {}  -- "target" / "mouseover" -> true
+learn:SetScript("OnUpdate", function(self)
+	self:Hide()
+	Scan()
+	for unit in pairs(pending) do
+		local guid, name = UnitGUID(unit), UnitName(unit)
+		if guid and name then
+			for f, text in pairs(plates) do
+				if f:IsShown() and text:GetText() == name then
+					local lit
+					if unit == "target" then
+						lit = IsTargetPlate(f)
+					else
+						lit = highlights[f] and highlights[f]:IsShown()
+					end
+					if lit then
+						lastPlate[guid] = f
+						break
+					end
+				end
+			end
+		end
+	end
+	wipe(pending)
+end)
+ns.On("UPDATE_MOUSEOVER_UNIT", function() pending.mouseover = true; learn:Show() end)
+ns.On("PLAYER_TARGET_CHANGED", function() pending.target = true; learn:Show() end)
 
 -- true while the plate still shows the unit it was matched to
 function ns.PlateShows(plate, name)
