@@ -416,9 +416,10 @@ end
 
 -- Show on: "plates" and "box" send both kinds one way; "healsplates" puts heals on plates and damage in
 -- My box, "dmgplates" the other way round
+-- "both" sends everything to My box and to the plates as well
 function ns.ToBox(heal)
 	local into = ns.db.anchor
-	return into == "box" or (into == "healsplates" and not heal) or (into == "dmgplates" and heal)
+	return into == "box" or into == "both" or (into == "healsplates" and not heal) or (into == "dmgplates" and heal)
 end
 
 local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
@@ -429,9 +430,10 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 		if amount <= 0 or not show[crit and "crit" or "normal"] then return end
 	end
 	local label, color, size, pop = Style(who, kind, amount, crit, miss)
+	local both = db.anchor == "both"
 	if ns.ToBox(HEALING[kind]) then
 		ns.BoxAdd("mine", label, color, size, icon, amount, HEALING[kind] and "+" or "")
-		return
+		if not both then return end
 	end
 
 	-- Damage and heals go to the same place: the unit's nameplate (an invisible friendly plate still
@@ -441,6 +443,8 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 	ns.lastDest, ns.lastDestPlate = name, plate
 	if plate then
 		Show(plate, name, 0, 0, label, color, size, icon, pop)
+	elseif both then
+		-- no plate: My box already has it
 	elseif HEALING[kind] then
 		-- a heal on someone with no plate on screen: into My box, a column right of centre, or nowhere
 		if db.noPlateHeals == "box" then

@@ -2,7 +2,8 @@ local ADDON, ns = ...
 
 -- One profile's settings. ns.db is the active profile.
 -- anchor (output: your damage and heals on others): "plates" = on the unit's nameplate, "box" = My box,
--- "healsplates" = heals on plates and damage in My box, "dmgplates" = the other way round
+-- "both" = nameplates and My box, "healsplates" = heals on plates and damage in My box, "dmgplates" =
+-- the other way round
 -- what lands on you always goes to the Received box; receivedFloat also floats it over your character
 -- animation: "arc", "rise", "stay", "fountain" or "fall" (Bites.lua's Path)
 -- critStyle: "pop" = starts large and settles, "big" = larger, "plain" = colour only
@@ -102,7 +103,7 @@ end
 -- screen fold into nameplates); box settings once shared by both boxes; class colour once two
 -- checkboxes (normal hits win when both were on, so crits keep standing out).
 local function Upgrade(db)
-	local anchors = { plates = true, box = true, healsplates = true, dmgplates = true }
+	local anchors = { plates = true, box = true, both = true, healsplates = true, dmgplates = true }
 	if not anchors[db.anchor] then db.anchor = "plates" end
 	db.receivedOn = nil
 	for _, key in ipairs({ "mine", "received" }) do
