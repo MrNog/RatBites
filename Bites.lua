@@ -195,8 +195,7 @@ end
 -- The path, the start gap and the stack line are screen distances (UIParent units): the text's
 -- own offsets are scaled with it, so each is divided by the text's scale, and a bigger text size
 -- doesn't send numbers further. The stack line grows with the text, as the lines it keeps apart do.
--- On a plate the spot is kept up to date while the plate still shows the same name, so a plate that
--- goes away mid-flight leaves the text where it was.
+-- Every number moves from a fixed spot in UIParent units (for a plate, read when it appears).
 local START_GAP = 12  -- how far above the plate a number starts
 
 local function Move(t, elapsed)
@@ -209,17 +208,7 @@ local function Move(t, elapsed)
 	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
 	dx, dy = dx / scale, dy / scale
 	t:ClearAllPoints()
-	if t.plate and ns.PlateShows(t.plate, t.name) then
-		t:SetPoint("CENTER", t.plate, "TOP", dx, dy)
-		local x, top = t.plate:GetCenter(), t.plate:GetTop()
-		if x and top then
-			local s = t.plate:GetEffectiveScale() / UIParent:GetEffectiveScale()
-			t.x, t.y = x * s, top * s
-		end
-	else
-		t.plate = nil
-		t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x / scale + dx, t.y / scale + dy)
-	end
+	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x / scale + dx, t.y / scale + dy)
 	t:SetAlpha(p > FADE_AT and 1 - (p - FADE_AT) / (1 - FADE_AT) or 1)
 end
 
@@ -241,6 +230,16 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 		t.icon:Hide(); t.edge:Hide()
 	end
 	t.plate, t.name, t.x, t.y = plate, name, x, y
+	-- A number on a plate starts over the plate's top, read once here: from then on it moves on its
+	-- own, since a plate shifts a pixel or two every frame as you or the camera move and a number
+	-- following it would tremble.
+	if plate then
+		local cx, top = plate:GetCenter(), plate:GetTop()
+		if cx and top then
+			local s = plate:GetEffectiveScale() / UIParent:GetEffectiveScale()
+			t.x, t.y = cx * s, top * s
+		end
+	end
 	t.label, t.shield, t.serial = label, nil, ns.NextSerial()
 	ns.lastShown = t
 	t.straight = column
