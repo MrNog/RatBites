@@ -161,7 +161,7 @@ end
 -- shrinks it smoothly back over BOMB_TIME, and only then does its path start.
 local START_GAP = 12  -- how far above the plate a number starts
 local FONT_MAX = 64
-local BOMB, BOMB_TIME = 1.7, 0.12
+local BOMB, BOMB_TIME = 2.5, 0.25
 
 local function Finished(group)
 	local t = group.owner
