@@ -5,7 +5,10 @@ local ADDON, ns = ...
 -- of the boxes (Boxes.lua) as a line.
 
 local FADE_AT = 0.65      -- share of a number's time before its fade starts
-local POP_TIME = 0.15     -- a popping crit shrinks to its size over this long
+local SLAM_TIME = 0.12    -- a popping crit slams from big down past its size over this long
+local POP_TIME = 0.24     -- ... then bounces back to its size and stops shaking by this time
+local SLAM_SIZE = 2.3     -- how big a popping crit starts
+local SHAKE = 3           -- how far (px) a popping crit shakes while it lands
 local SIZE = 20           -- a normal hit's font size at scale 1, and every icon's size
 ns.SIZE = SIZE
 local MAX_TEXTS = 40
@@ -206,13 +209,30 @@ local function PlateTop(plate)
 	if debuffs and debuffs:IsShown() and debuffs[1] and debuffs[1]:IsShown() then return debuffs end
 	return plate
 end
+-- A popping crit lands like a blow: it starts SLAM_SIZE big and slams down a little past its size,
+-- bounces back to it, shaking the whole time, and only starts its path once it has landed.
+local function Slam(elapsed)
+	if elapsed < SLAM_TIME then
+		local f = elapsed / SLAM_TIME
+		return SLAM_SIZE + (0.88 - SLAM_SIZE) * f * f
+	end
+	return 0.88 + 0.12 * (elapsed - SLAM_TIME) / (POP_TIME - SLAM_TIME)
+end
+
 local function Move(t, elapsed)
-	local p = elapsed / t.duration
+	local landing = t.pop and elapsed < POP_TIME
+	-- a popping crit's path waits for it to land
+	local travel = t.pop and math.max(0, elapsed - POP_TIME) or elapsed
+	local p = travel / (t.pop and t.duration - POP_TIME or t.duration)
 	local textScale = ns.db.scale
 	local scale = textScale
-	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
+	if landing then scale = scale * Slam(elapsed) end
 	t:SetScale(scale)
 	local dx, dy = Path(t, p)
+	if landing then
+		dx = dx + (math.random() * 2 - 1) * SHAKE
+		dy = dy + (math.random() * 2 - 1) * SHAKE
+	end
 	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
 	dx, dy = dx / scale, dy / scale
 	t:ClearAllPoints()
