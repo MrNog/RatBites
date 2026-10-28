@@ -303,6 +303,8 @@ end)
 
 ns.On("ACTIVE_TALENT_GROUP_CHANGED", function()
 	if ns.char.dual then ns.UseProfile() end
+	-- the Profiles tab marks the spec in use
+	if ns.RefreshOptions then ns.RefreshOptions() end
 end)
 
 -- /rb is the game's Raid Browser
