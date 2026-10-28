@@ -265,6 +265,8 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	local db = ns.db
 	t.group:Stop()
 	t:SetAlpha(1)
+	-- a crit draws above every other number, so it shows through a pile of heals
+	t:SetFrameLevel(root:GetFrameLevel() + (color.thick and 20 or 1))
 	-- the size it should show at (Text size included), drawn at up to FONT_MAX and scaled the rest;
 	-- every icon has one size (a normal hit's), so crits grow only their text
 	local want = size * db.scale
