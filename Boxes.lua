@@ -150,6 +150,26 @@ local function Create(key)
 	return box
 end
 
+-- A line's text: its number (the merged total when it has one) or word, "xN" once merged, and the
+-- shields its heals made in shield blue at the end.
+local SHIELD_HEX = "8cd1ff"
+local function LineText(line)
+	local s = line.total and (line.sign or "") .. ns.Abbrev(line.total) or line.label
+	if line.count > 1 then s = s .. " x" .. line.count end
+	if line.shield then s = s .. " |cff" .. SHIELD_HEX .. "+" .. ns.Abbrev(line.shield) .. "|r" end
+	return s
+end
+
+-- a shield made by a heal joins the line that heal is on (box line or floating number)
+function ns.JoinShield(el, amount)
+	el.shield = (el.shield or 0) + amount
+	if el.count then
+		el.text:SetText(LineText(el))
+	else
+		el.text:SetText(el.label .. " |cff" .. SHIELD_HEX .. "+" .. ns.Abbrev(el.shield) .. "|r")
+	end
+end
+
 -- one line into a box: "mine" or "received"
 -- amount and sign: the number behind the label ("+" for heals, "-" for damage taken), so merged
 -- lines can add up; words such as "Dodge" or "Shield" come without one
@@ -175,19 +195,17 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	end
 	if last then
 		last.count = last.count + 1
-		if amount and last.total then
-			last.total = last.total + amount
-			last.text:SetText((last.sign or "") .. ns.Abbrev(last.total) .. " x" .. last.count)
-		else
-			last.text:SetText(last.label .. " x" .. last.count)
-		end
+		if amount and last.total then last.total = last.total + amount end
+		last.text:SetText(LineText(last))
 		last.at = GetTime()
 		last:SetAlpha(1)
-		return
+		ns.lastShown = last
+		return last
 	end
 	local line = table.remove(box.pool) or NewLine(box)
 	line.label, line.iconPath, line.color, line.count = label, icon, color, 1
-	line.total, line.sign, line.first = amount, sign, GetTime()
+	line.total, line.sign, line.first, line.shield = amount, sign, GetTime(), nil
+	line.serial = ns.NextSerial()
 	size = size * db.scale
 	line.text:SetFont(ns.FontPath(), size, color.thick and "THICKOUTLINE" or "OUTLINE")
 	line.text:SetText(label)
@@ -207,6 +225,8 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	line:Show()
 	table.insert(box.lines, 1, line)
 	Layout(box)
+	ns.lastShown = line
+	return line
 end
 
 function ns.BoxesUnlocked() return unlocked end

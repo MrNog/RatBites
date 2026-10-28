@@ -238,6 +238,9 @@ local function ShowPage(page, db, flag)
 	y = Check(page, y, "Spells and abilities", flag(show, "spell"))
 	y = Check(page, y, "Damage over time", flag(show, "dot"))
 	y = Check(page, y, "Heals and shields", flag(show, "heal"))
+	y = Choice(page, y, "Shields from heals",
+		{ { "join", "Join the heal" }, { "line", "Own line" }, { "hide", "Hide" } },
+		flag(db, "healShields"))
 	y = Check(page, y, "Misses (dodge, parry ...)", flag(show, "miss"))
 	y = Check(page, y, "Pet damage", flag(show, "pet"))
 	y = Section(page, y, "What is done to you")

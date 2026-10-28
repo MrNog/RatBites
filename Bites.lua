@@ -54,6 +54,14 @@ function ns.FontList()
 	return list
 end
 
+-- Every floating number and box line gets a new serial when it is (re)used, so a later shield can
+-- tell the number its heal made from a pooled one now showing something else.
+local serial = 0
+function ns.NextSerial()
+	serial = serial + 1
+	return serial
+end
+
 function ns.FontPath()
 	local key = ns.db.font
 	local name = key:match("^lsm:(.+)")
@@ -219,6 +227,8 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 		t.icon:Hide(); t.edge:Hide()
 	end
 	t.plate, t.name, t.x, t.y = plate, name, x, y
+	t.label, t.shield, t.serial = label, nil, ns.NextSerial()
+	ns.lastShown = t
 	t.straight = column
 	t.anim = column and "rise" or db.animation
 	t.pop, t.rise, t.duration = pop, db.height, db.duration
@@ -497,13 +507,30 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 		amount = ShieldSize((...), destGUID)
 		-- a refresh only shows when it has a size to tell: Val'anyr refreshes on every heal
 		if event == "SPELL_AURA_REFRESH" and not amount then return end
+		-- a shield made by your heal (Val'anyr, Divine Aegis): joined to that heal's number, hidden,
+		-- or on its own line, as the "Shields from heals" setting says
+		if amount and HEAL_SHARE[(...)] then
+			if db.healShields == "hide" then return end
+			local h = lastHeal[destGUID]
+			local el = h and h.el
+			if db.healShields == "join" and el and el.serial == h.serial and el:IsShown() then
+				ns.JoinShield(el, amount)
+				return
+			end
+		end
 	end
+	ns.lastShown = nil
 	-- output is what you do to others; receiving is everything that lands on you, your own
 	-- self-heals and shields included
 	if toMe then
 		Received(kind, amount, crit, icon, miss)
 	else
 		Outgoing(who, destGUID, destName, kind, amount, crit, icon, miss)
+	end
+	-- remember where your heal's number went, for the shield that follows it
+	if who and (kind == "heal" or kind == "overheal") and lastHeal[destGUID] then
+		local el = ns.lastShown
+		lastHeal[destGUID].el, lastHeal[destGUID].serial = el, el and el.serial
 	end
 end)
 
