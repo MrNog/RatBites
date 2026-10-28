@@ -77,7 +77,7 @@ local function Layout(box)
 	local room, offset = box:GetHeight(), 0
 	for i = 1, #box.lines do
 		local line = box.lines[i]
-		local h = math.max(line.size, line.size * ns.db.iconScale) + LINE_GAP
+		local h = math.max(line.size, ns.SIZE * ns.db.scale * ns.db.iconScale) + LINE_GAP
 		if offset + h > room then
 			for j = #box.lines, i, -1 do Drop(box, j) end
 			return
@@ -175,7 +175,10 @@ function ns.BoxAdd(key, label, color, size, icon)
 	line.text:SetTextColor(color[1], color[2], color[3])
 	if icon and db.icons then
 		line.icon:SetTexture(icon)
-		line.icon:SetWidth(size * db.iconScale); line.icon:SetHeight(size * db.iconScale)
+		-- one icon size for every line, so the icons stack in a straight column and crits grow only
+		-- their text
+		local iconSize = ns.SIZE * db.scale * db.iconScale
+		line.icon:SetWidth(iconSize); line.icon:SetHeight(iconSize)
 		line.icon:Show(); line.edge:Show()
 	else
 		line.icon:Hide(); line.edge:Hide()

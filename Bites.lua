@@ -6,7 +6,8 @@ local ADDON, ns = ...
 
 local FADE_AT = 0.65      -- share of a number's time before its fade starts
 local POP_TIME = 0.15     -- a popping crit shrinks to its size over this long
-local SIZE = 20           -- a normal hit's font size at scale 1
+local SIZE = 20           -- a normal hit's font size at scale 1, and every icon's size
+ns.SIZE = SIZE
 local MAX_TEXTS = 40
 local ATTACK_ICON = [[Interface\Icons\INV_Sword_04]]
 
@@ -209,7 +210,8 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t.text:SetTextColor(color[1], color[2], color[3])
 	if icon and db.icons then
 		t.icon:SetTexture(icon)
-		t.icon:SetWidth(size * db.iconScale); t.icon:SetHeight(size * db.iconScale)
+		-- every icon has one size (a normal hit's), so crits grow only their text
+		t.icon:SetWidth(SIZE * db.iconScale); t.icon:SetHeight(SIZE * db.iconScale)
 		t.icon:Show(); t.edge:Show()
 	else
 		t.icon:Hide(); t.edge:Hide()
