@@ -257,21 +257,19 @@ local PAGES = {
 }
 
 --------------------------------------------------------------------------------
--- tabs: plates joined to the hairline under them; the open one takes the window's fill and gold text
+-- tabs: small cut-corner plates standing on the hairline under them; the open one takes the window's
+-- fill, a gold edge and gold text
 --------------------------------------------------------------------------------
 
 local TAB_H, TAB_PAD, TAB_GAP = 28, 18, 4
 local TAB_X, TAB_Y = 90, -42   -- clear of the medallion over the top-left corner
 
 local function PaintTab(tab, on)
-	local F, E = ns.WIN_FILL, ns.WIN_EDGE
 	if on then
-		tab:SetBackdropColor(F[1], F[2], F[3], 1)
-		tab:SetBackdropBorderColor(rgb(C.accent))
+		ns.TintChamfer(tab.chamfer, ns.WIN_FILL, C.accent)
 		tab.text:SetTextColor(rgb(C.accentText))
 	else
-		tab:SetBackdropColor(rgb(C.panelD, 1))
-		tab:SetBackdropBorderColor(E[1], E[2], E[3])
+		ns.TintChamfer(tab.chamfer, C.panelD, ns.WIN_EDGE)
 		tab.text:SetTextColor(rgb(C.textDim))
 	end
 end
@@ -332,7 +330,7 @@ function ns.CreateOptions()
 	for _, def in ipairs(PAGES) do
 		local key = def[1]
 		local tab = CreateFrame("Button", nil, body)
-		ns.Skin(tab)
+		tab.chamfer = ns.SmallChamfer(tab)
 		tab.text = Text(tab, 13)
 		tab.text:SetPoint("CENTER", 0, 0)
 		tab.text:SetText(def[2])

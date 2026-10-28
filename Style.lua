@@ -210,6 +210,37 @@ function ns.SkinWindow(f)
 	return f
 end
 
+-- Small cut corners (8px) for pieces inside a window, such as the settings tabs. The same chamfer
+-- sheet holds them in its lower half. Returns the fill and edge pieces, to be tinted by ns.TintChamfer.
+local SMALL_U, SMALL_CORNER = { 0, 16 / 128, 48 / 128, 64 / 128 }, 8
+
+local function smallPieces(frame, layer, ox)
+	local pieces = {}
+	local xs = { { "LEFT", 0 }, { "LEFT", SMALL_CORNER }, { "RIGHT", -SMALL_CORNER }, { "RIGHT", 0 } }
+	local ys = { { "TOP", 0 }, { "TOP", -SMALL_CORNER }, { "BOTTOM", SMALL_CORNER }, { "BOTTOM", 0 } }
+	for row = 1, 3 do
+		for col = 1, 3 do
+			local tex = frame:CreateTexture(nil, layer)
+			tex:SetTexture(UI .. "chamfer")
+			tex:SetTexCoord(ox + SMALL_U[col], ox + SMALL_U[col + 1], 0.5 + SMALL_U[row], 0.5 + SMALL_U[row + 1])
+			local x1, y1, x2, y2 = xs[col], ys[row], xs[col + 1], ys[row + 1]
+			tex:SetPoint("TOPLEFT", frame, y1[1] .. x1[1], x1[2], y1[2])
+			tex:SetPoint("BOTTOMRIGHT", frame, y2[1] .. x2[1], x2[2], y2[2])
+			pieces[#pieces + 1] = tex
+		end
+	end
+	return pieces
+end
+
+function ns.SmallChamfer(frame)
+	return { fill = smallPieces(frame, "BACKGROUND", 0), edge = smallPieces(frame, "BORDER", 0.5) }
+end
+
+function ns.TintChamfer(ch, fill, edge)
+	for _, tex in ipairs(ch.fill) do tex:SetVertexColor(fill[1], fill[2], fill[3], fill[4] or 1) end
+	for _, tex in ipairs(ch.edge) do tex:SetVertexColor(edge[1], edge[2], edge[3], edge[4] or 1) end
+end
+
 local COVER_TC = { TOPLEFT = { 0, 1, 0, 1 }, TOPRIGHT = { 1, 0, 0, 1 },
 	BOTTOMLEFT = { 0, 1, 1, 0 }, BOTTOMRIGHT = { 1, 0, 1, 0 } }
 function ns.CoverCorners(host, region, corners)
