@@ -84,7 +84,7 @@ local arc = 1
 
 -- Numbers that land on the same spot together (a heal and its proc, a multi-hit) would start on top
 -- of each other, so each one within STACK_TIME of the last starts a line higher, up to STACK_MAX.
-local STACK_TIME, STACK_MAX = 0.35, 4
+local STACK_TIME, STACK_MAX = 0.5, 4
 local stacks = {}  -- plate or spot -> { at = time of the last number, n = its line }
 
 local function StackLine(key, size)
@@ -97,7 +97,7 @@ local function StackLine(key, size)
 		stacks[key] = s
 	end
 	s.at = now
-	return s.n * (size + 4)
+	return s.n * (size * 1.2 + 8)
 end
 
 local function Acquire()
@@ -133,7 +133,7 @@ end
 local function Move(t, elapsed)
 	local p = elapsed / DURATION
 	local scale = ns.db.scale
-	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.8 * (1 - elapsed / POP_TIME)) end
+	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
 	t:SetScale(scale)
 	local dx = t.dx * p
 	local dy = (t.straight and 0 or 20) + t.line + 70 * p - 20 * p * p
@@ -173,7 +173,7 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, straight)
 		t.dx = 0
 	else
 		arc = -arc
-		t.dx = arc * (20 + math.random() * 25)
+		t.dx = arc * (35 + math.random() * 30)
 	end
 	t.start = GetTime()
 	t:Show()
