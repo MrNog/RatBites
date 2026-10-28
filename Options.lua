@@ -1,18 +1,19 @@
 local ADDON, ns = ...
 
--- RatBites' settings window: two columns of one-line rows, the setting's name on the left and its
--- control on the right edge.
+-- RatBites' settings window: five tabs along the top (General, Look, Motion, Show, Boxes), each a
+-- single column of roomy one-line rows, the setting's name on the left and its control on the right.
 
 local C, rgb
 local panel
 local refreshers = {}
 
-local COL_W = 340      -- width of one column
-local COL_GAP = 36
-local MARGIN = 26
-local ROW_H = 30
-local colX = MARGIN    -- the column the helpers below are drawing into
-local stripe = false   -- every other row in a section gets a faint band
+local WIDTH = 640
+local MARGIN = 30
+local COL_W = WIDTH - MARGIN * 2
+local ROW_H = 36
+local CONTROL_W = 170   -- dropdowns and buttons
+local TOP = -96         -- where a page's first section starts, under the tabs
+local stripe = false    -- every other row in a section gets a faint band
 
 local function Changed()
 	for _, fn in ipairs(refreshers) do fn() end
@@ -30,22 +31,24 @@ local function Text(parent, size, color)
 	return fs
 end
 
-local function Section(parent, y, text)
+-- a gold heading with a hairline to the column's end; first = the page's top one, without the gap
+local function Section(parent, y, text, first)
+	if not first then y = y - 22 end
 	local fs = Text(parent, 11, C.accentText)
-	fs:SetPoint("TOPLEFT", colX, y)
+	fs:SetPoint("TOPLEFT", MARGIN, y)
 	fs:SetText(text:upper())
 	local rule = ns.Rule(parent)
 	rule:SetPoint("LEFT", fs, "RIGHT", 8, 0)
 	rule:SetWidth(math.max(1, COL_W - fs:GetStringWidth() - 8))
 	stripe = false
-	return y - 20
+	return y - 26
 end
 
 -- one setting's row: its name on the left; the control goes on the right
 local function Row(parent, y, label)
 	local row = CreateFrame("Button", nil, parent)
-	row:SetPoint("TOPLEFT", colX - 6, y)
-	row:SetWidth(COL_W + 12)
+	row:SetPoint("TOPLEFT", MARGIN - 8, y)
+	row:SetWidth(COL_W + 16)
 	row:SetHeight(ROW_H)
 	if stripe then
 		local band = row:CreateTexture(nil, "BACKGROUND")
@@ -58,8 +61,8 @@ local function Row(parent, y, label)
 	hover:SetTexture(ns.FLAT)
 	hover:SetVertexColor(1, 1, 1, 0.05)
 	hover:SetAllPoints(row)
-	local fs = Text(row, 13)
-	fs:SetPoint("LEFT", 6, 0)
+	local fs = Text(row, 14)
+	fs:SetPoint("LEFT", 10, 0)
 	fs:SetText(label)
 	return row
 end
@@ -68,7 +71,7 @@ end
 local function Check(parent, y, label, get, set)
 	local row = Row(parent, y, label)
 	local box, tick = ns.CheckBox(row, 20)
-	box:SetPoint("RIGHT", -4, 0)
+	box:SetPoint("RIGHT", -8, 0)
 	row:SetScript("OnClick", function() set(not get()); Changed() end)
 	refreshers[#refreshers + 1] = function()
 		if get() then tick:Show() else tick:Hide() end
@@ -79,8 +82,8 @@ end
 -- a dropdown on the right of its row, showing the current choice
 local function Choice(parent, y, label, values, get, set)
 	local row = Row(parent, y, label)
-	local drop = ns.Dropdown(row, 150, values, get, function(key) set(key); Changed() end)
-	drop:SetPoint("RIGHT", -4, 0)
+	local drop = ns.Dropdown(row, CONTROL_W, values, get, function(key) set(key); Changed() end)
+	drop:SetPoint("RIGHT", -8, 0)
 	refreshers[#refreshers + 1] = function() drop:Refresh() end
 	return y - ROW_H
 end
@@ -104,9 +107,9 @@ end
 local function Stepper(parent, y, label, lo, hi, step, fmt, get, set)
 	local row = Row(parent, y, label)
 	local plus = SignButton(row, true)
-	plus:SetPoint("RIGHT", -4, 0)
+	plus:SetPoint("RIGHT", -8, 0)
 	local value = Text(row, 13, C.accentText)
-	value:SetWidth(44)
+	value:SetWidth(58)
 	value:SetPoint("RIGHT", plus, "LEFT", -4, 0)
 	local minus = SignButton(row, false)
 	minus:SetPoint("RIGHT", value, "LEFT", -4, 0)
@@ -120,6 +123,18 @@ local function Stepper(parent, y, label, lo, hi, step, fmt, get, set)
 	refreshers[#refreshers + 1] = function() value:SetText(fmt(get())) end
 	return y - ROW_H
 end
+
+-- a red button on the right of its row; label() gives its text after each change
+local function Action(parent, y, text, onClick, label)
+	local row = Row(parent, y, text)
+	local b = ns.RedButton(row, "", CONTROL_W, 22)
+	b:SetPoint("RIGHT", -8, 0)
+	b:SetScript("OnClick", function() onClick(); Changed() end)
+	refreshers[#refreshers + 1] = function() b:SetText(label()) end
+	return y - ROW_H
+end
+
+local function Percent(v) return format("%d%%", v * 100 + 0.5) end
 
 -- The training-yard picture behind the settings, as RatStash's behind its windows. Its subject sits in
 -- the right third, so the picture keeps its right edge and a dark wash fades in from the left, where
@@ -148,14 +163,117 @@ local function PaintArt(art, wash, w, h)
 	wash:Show()
 end
 
--- a red button on the right of its row; label() gives its text after each change
-local function Action(parent, y, text, onClick, label)
-	local row = Row(parent, y, text)
-	local b = ns.RedButton(row, "", 150, 22)
-	b:SetPoint("RIGHT", -4, 0)
-	b:SetScript("OnClick", function() onClick(); Changed() end)
-	refreshers[#refreshers + 1] = function() b:SetText(label()) end
-	return y - ROW_H
+--------------------------------------------------------------------------------
+-- the pages
+--------------------------------------------------------------------------------
+
+local function GeneralPage(page, db, flag)
+	local y = Section(page, TOP, "Numbers", true)
+	y = Check(page, y, "Enabled", flag(db, "enabled"))
+	y = Action(page, y, "Test numbers",
+		function() ns.SetTestLoop(not ns.TestLooping()) end,
+		function() return ns.TestLooping() and "Stop" or "Start" end)
+	y = Choice(page, y, "Your numbers show on",
+		{ { "plates", "Nameplates" }, { "target", "Target only" }, { "screen", "Center screen" }, { "box", "My box" } },
+		flag(db, "anchor"))
+	y = Choice(page, y, "Hits on you show on",
+		{ { "box", "Received box" }, { "floating", "Floating" } },
+		flag(db, "receivedOn"))
+	y = Check(page, y, "Hide the game's own numbers", flag(db, "hideBlizzard"))
+	y = Section(page, y, "Window")
+	y = Check(page, y, "Minimap button", flag(db, "minimapButton"))
+	y = Check(page, y, "Background art", flag(db, "bgOn"))
+	y = Stepper(page, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end, flag(db, "bgArt"))
+	return y
+end
+
+local function LookPage(page, db, flag)
+	local y = Section(page, TOP, "Text", true)
+	y = Choice(page, y, "Font", ns.FontList(), flag(db, "font"))
+	y = Stepper(page, y, "Text size", 0.5, 2, 0.1, Percent, flag(db, "scale"))
+	y = Choice(page, y, "Number format",
+		{ { "short", "12.4k" }, { "full", "12,431" }, { "raw", "12431" } },
+		flag(db, "numbers"))
+	y = Section(page, y, "Icons")
+	y = Check(page, y, "Spell icons", flag(db, "icons"))
+	y = Stepper(page, y, "Icon size", 0.5, 2, 0.1, Percent, flag(db, "iconScale"))
+	y = Section(page, y, "Colors")
+	y = Choice(page, y, "Critical hits",
+		{ { "pop", "Pop" }, { "big", "Bigger" }, { "plain", "Plain" } },
+		flag(db, "critStyle"))
+	y = Check(page, y, "Big hits in gold", flag(db, "bigGold"))
+	y = Check(page, y, "Damage in my class color", flag(db, "classColor"))
+	return y
+end
+
+local function MotionPage(page, db, flag)
+	local y = Section(page, TOP, "Floating numbers", true)
+	y = Choice(page, y, "Animation",
+		{ { "arc", "Arc" }, { "rise", "Rise" }, { "stay", "Stay" }, { "fountain", "Fountain" }, { "fall", "Fall" } },
+		flag(db, "animation"))
+	y = Choice(page, y, "Sideways drift",
+		{ { "none", "None" }, { "tight", "Tight" }, { "normal", "Normal" }, { "wide", "Wide" } },
+		flag(db, "spread"))
+	y = Stepper(page, y, "Travel distance", 20, 150, 10, function(v) return format("%d", v) end, flag(db, "height"))
+	y = Stepper(page, y, "Time on screen", 0.8, 4, 0.1, function(v) return format("%.1fs", v) end, flag(db, "duration"))
+	return y
+end
+
+local function ShowPage(page, db, flag)
+	local show, inc = db.show, db.incoming
+	local y = Section(page, TOP, "What you do", true)
+	y = Check(page, y, "Normal hits", flag(show, "normal"))
+	y = Check(page, y, "Critical hits", flag(show, "crit"))
+	y = Check(page, y, "Auto-attacks", flag(show, "swing"))
+	y = Check(page, y, "Spells and abilities", flag(show, "spell"))
+	y = Check(page, y, "Damage over time", flag(show, "dot"))
+	y = Check(page, y, "Heals and shields", flag(show, "heal"))
+	y = Check(page, y, "Misses (dodge, parry ...)", flag(show, "miss"))
+	y = Check(page, y, "Pet damage", flag(show, "pet"))
+	y = Section(page, y, "What is done to you")
+	y = Check(page, y, "Damage taken", flag(inc, "damage"))
+	y = Check(page, y, "Heals received", flag(inc, "heals"))
+	return y
+end
+
+local function BoxesPage(page, db, flag)
+	local y = Section(page, TOP, "My box and Received box", true)
+	y = Action(page, y, "Move and resize boxes",
+		function() ns.SetBoxesUnlocked(not ns.BoxesUnlocked()) end,
+		function() return ns.BoxesUnlocked() and "Lock" or "Unlock" end)
+	y = Choice(page, y, "New lines come in at",
+		{ { "up", "The bottom" }, { "down", "The top" } },
+		flag(db, "boxScroll"))
+	y = Stepper(page, y, "Each line stays", 2, 10, 1, function(v) return format("%ds", v) end, flag(db, "boxTime"))
+	return y
+end
+
+local PAGES = {
+	{ "general", "General", GeneralPage },
+	{ "look", "Look", LookPage },
+	{ "motion", "Motion", MotionPage },
+	{ "show", "Show", ShowPage },
+	{ "boxes", "Boxes", BoxesPage },
+}
+
+--------------------------------------------------------------------------------
+-- tabs: plates joined to the hairline under them; the open one takes the window's fill and gold text
+--------------------------------------------------------------------------------
+
+local TAB_H, TAB_PAD, TAB_GAP = 28, 18, 4
+local TAB_X, TAB_Y = 90, -42   -- clear of the medallion over the top-left corner
+
+local function PaintTab(tab, on)
+	local F, E = ns.WIN_FILL, ns.WIN_EDGE
+	if on then
+		tab:SetBackdropColor(F[1], F[2], F[3], 1)
+		tab:SetBackdropBorderColor(rgb(C.accent))
+		tab.text:SetTextColor(rgb(C.accentText))
+	else
+		tab:SetBackdropColor(rgb(C.panelD, 1))
+		tab:SetBackdropBorderColor(E[1], E[2], E[3])
+		tab.text:SetTextColor(rgb(C.textDim))
+	end
 end
 
 function ns.CreateOptions()
@@ -163,7 +281,7 @@ function ns.CreateOptions()
 	local db = ns.db
 	panel = CreateFrame("Frame", "RatBitesOptions", UIParent)
 	panel:Hide()
-	panel:SetWidth(MARGIN * 2 + COL_W * 2 + COL_GAP)
+	panel:SetWidth(WIDTH)
 	panel:SetFrameStrata("DIALOG")
 	panel:SetToplevel(true)
 	panel:EnableMouse(true)
@@ -186,13 +304,57 @@ function ns.CreateOptions()
 	title:SetText("RatBites")
 	ns.Medallion(panel)
 
-	-- every row lives on the body, so minimizing hides them all and leaves the title bar
+	-- everything under the title bar lives on the body, so minimizing hides it all
 	local body = CreateFrame("Frame", nil, panel)
 	body:SetAllPoints(panel)
-	local fullHeight, minimized
-	local MINI_HEIGHT = 36
+
+	local function flag(t, key)
+		return function() return t[key] end, function(v) t[key] = v end
+	end
+
+	-- the tabs and the gold hairline they stand on
+	local line = body:CreateTexture(nil, "ARTWORK")
+	line:SetTexture(ns.FLAT)
+	line:SetVertexColor(rgb(C.accent))
+	line:SetHeight(1)
+	line:SetPoint("TOPLEFT", ns.INSET, TAB_Y - TAB_H)
+	line:SetPoint("TOPRIGHT", -ns.INSET, TAB_Y - TAB_H)
+	local tabs, pages, lowest = {}, {}, 0
+	local function Open(key)
+		db.tab = key
+		ns.CloseDropdowns()
+		for k, page in pairs(pages) do
+			if k == key then page:Show() else page:Hide() end
+			PaintTab(tabs[k], k == key)
+		end
+	end
+	local x = TAB_X
+	for _, def in ipairs(PAGES) do
+		local key = def[1]
+		local tab = CreateFrame("Button", nil, body)
+		ns.Skin(tab)
+		tab.text = Text(tab, 13)
+		tab.text:SetPoint("CENTER", 0, 0)
+		tab.text:SetText(def[2])
+		tab:SetWidth(tab.text:GetStringWidth() + TAB_PAD * 2)
+		tab:SetHeight(TAB_H)
+		-- the open tab covers the hairline under it, so it joins the page
+		tab:SetPoint("TOPLEFT", body, "TOPLEFT", x, TAB_Y)
+		tab:SetFrameLevel(body:GetFrameLevel() + 3)
+		tab:SetScript("OnClick", function() PlaySound("igMainMenuOptionCheckBoxOn"); Open(key) end)
+		x = x + tab:GetWidth() + TAB_GAP
+		tabs[key] = tab
+
+		local page = CreateFrame("Frame", nil, body)
+		page:SetAllPoints(body)
+		page:Hide()
+		pages[key] = page
+		lowest = math.min(lowest, def[3](page, db, flag))
+	end
 
 	-- the minimize button left of the X: a gold minus, a plus while minimized
+	local fullHeight, minimized = -lowest + 24, false
+	local MINI_HEIGHT = 36
 	local mini = ns.RedButton(head, "", 20, 20)
 	mini:SetPoint("RIGHT", head.close, "LEFT", -4, 0)
 	local across = mini:CreateTexture(nil, "OVERLAY")
@@ -218,96 +380,6 @@ function ns.CreateOptions()
 	end
 	mini:SetScript("OnClick", function() SetMinimized(not minimized) end)
 
-	local fonts = ns.FontList()
-
-	-- left column: where the numbers show and how they look
-	colX = MARGIN
-	local y = -58
-	y = Section(body, y, "General")
-	y = Check(body, y, "Enabled",
-		function() return db.enabled end, function(v) db.enabled = v end)
-	y = Action(body, y, "Test numbers",
-		function() ns.SetTestLoop(not ns.TestLooping()) end,
-		function() return ns.TestLooping() and "Stop" or "Start" end)
-	y = Choice(body, y, "Show on",
-		{ { "plates", "Nameplates" }, { "target", "Target only" }, { "screen", "Center screen" }, { "box", "My box" } },
-		function() return db.anchor end, function(v) db.anchor = v end)
-	y = Choice(body, y, "Received shows on",
-		{ { "box", "Received box" }, { "floating", "Floating" } },
-		function() return db.receivedOn end, function(v) db.receivedOn = v end)
-	y = Stepper(body, y, "Text size", 0.5, 2, 0.1, function(v) return format("%d%%", v * 100 + 0.5) end,
-		function() return db.scale end, function(v) db.scale = v end)
-	y = Stepper(body, y, "Icon size", 0.5, 2, 0.1, function(v) return format("%d%%", v * 100 + 0.5) end,
-		function() return db.iconScale end, function(v) db.iconScale = v end)
-	y = Choice(body, y, "Font", fonts,
-		function() return db.font end, function(v) db.font = v end)
-
-	y = Section(body, y - 10, "Motion")
-	y = Choice(body, y, "Animation",
-		{ { "arc", "Arc" }, { "rise", "Rise" }, { "stay", "Stay" }, { "fountain", "Fountain" }, { "fall", "Fall" } },
-		function() return db.animation end, function(v) db.animation = v end)
-	y = Choice(body, y, "Spread",
-		{ { "none", "None" }, { "tight", "Tight" }, { "normal", "Normal" }, { "wide", "Wide" } },
-		function() return db.spread end, function(v) db.spread = v end)
-	y = Stepper(body, y, "Height", 20, 150, 10, function(v) return format("%d", v) end,
-		function() return db.height end, function(v) db.height = v end)
-	y = Stepper(body, y, "Duration", 0.8, 4, 0.1, function(v) return format("%.1fs", v) end,
-		function() return db.duration end, function(v) db.duration = v end)
-
-	y = Section(body, y - 10, "Look")
-	y = Check(body, y, "Spell icons",
-		function() return db.icons end, function(v) db.icons = v end)
-	y = Check(body, y, "Class-colored damage",
-		function() return db.classColor end, function(v) db.classColor = v end)
-	y = Check(body, y, "Big hits in gold",
-		function() return db.bigGold end, function(v) db.bigGold = v end)
-	y = Choice(body, y, "Crit style",
-		{ { "pop", "Pop" }, { "big", "Bigger" }, { "plain", "Plain" } },
-		function() return db.critStyle end, function(v) db.critStyle = v end)
-	y = Choice(body, y, "Short numbers",
-		{ { "short", "12.4k" }, { "full", "12,431" }, { "raw", "12431" } },
-		function() return db.numbers end, function(v) db.numbers = v end)
-	local leftEnd = y
-
-	-- right column: which numbers show
-	local show, inc = db.show, db.incoming
-	local function flag(t, key)
-		return function() return t[key] end, function(v) t[key] = v end
-	end
-	colX = MARGIN + COL_W + COL_GAP
-	y = -58
-	y = Section(body, y, "Show")
-	y = Check(body, y, "Normal hits", flag(show, "normal"))
-	y = Check(body, y, "Critical hits", flag(show, "crit"))
-	y = Check(body, y, "Auto-attacks", flag(show, "swing"))
-	y = Check(body, y, "Abilities / spells", flag(show, "spell"))
-	y = Check(body, y, "Damage over time", flag(show, "dot"))
-	y = Check(body, y, "Heals", flag(show, "heal"))
-	y = Check(body, y, "Misses / avoidance", flag(show, "miss"))
-	y = Check(body, y, "Pet damage", flag(show, "pet"))
-
-	y = Section(body, y - 10, "Received")
-	y = Check(body, y, "Damage taken", flag(inc, "damage"))
-	y = Check(body, y, "Heals", flag(inc, "heals"))
-	y = Check(body, y, "Hide Blizzard text", flag(db, "hideBlizzard"))
-
-	y = Section(body, y - 10, "Boxes")
-	y = Choice(body, y, "Scroll",
-		{ { "up", "Up" }, { "down", "Down" } },
-		function() return db.boxScroll end, function(v) db.boxScroll = v end)
-	y = Stepper(body, y, "Line time", 2, 10, 1, function(v) return format("%ds", v) end,
-		function() return db.boxTime end, function(v) db.boxTime = v end)
-	y = Action(body, y, "Move boxes",
-		function() ns.SetBoxesUnlocked(not ns.BoxesUnlocked()) end,
-		function() return ns.BoxesUnlocked() and "Lock" or "Unlock" end)
-
-	y = Section(body, y - 10, "Window")
-	y = Check(body, y, "Minimap button", flag(db, "minimapButton"))
-	y = Check(body, y, "Background art", flag(db, "bgOn"))
-	y = Stepper(body, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end,
-		function() return db.bgArt end, function(v) db.bgArt = v end)
-
-	fullHeight = -math.min(y, leftEnd) + 16
 	panel:SetHeight(fullHeight)
 	refreshers[#refreshers + 1] = function()
 		if minimized then
@@ -316,6 +388,7 @@ function ns.CreateOptions()
 			PaintArt(art, wash, panel:GetWidth(), panel:GetHeight())
 		end
 	end
+	Open(pages[db.tab] and db.tab or "general")
 	panel:SetScript("OnShow", function() for _, fn in ipairs(refreshers) do fn() end end)
 	panel:SetScript("OnHide", function()
 		ns.CloseDropdowns()
