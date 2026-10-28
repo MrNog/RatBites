@@ -25,6 +25,7 @@ local COLOR = {
 	miss = { 0.9, 0.9, 0.9 },
 	heal = { 0.25, 1, 0.35 },
 	overheal = { 0.45, 0.62, 0.45 },
+	shield = { 0.55, 0.82, 1 },
 	taken = { 1, 0.22, 0.18 },
 }
 
@@ -97,7 +98,7 @@ local function StackLine(key, size)
 		stacks[key] = s
 	end
 	s.at = now
-	return s.n * (size * 1.2 + 8)
+	return s.n * (size + 4)
 end
 
 local function Acquire()
@@ -123,37 +124,45 @@ end
 local function Release(i)
 	local t = table.remove(active, i)
 	t:Hide()
-	t.plate = nil
+	t.anchor = nil
 	table.insert(pool, t)
 end
 
+-- the text still has what it rides: the plate shows the same name, the unit frame the same player
+local function Holds(t)
+	if t.onPlate then return ns.PlateShows(t.anchor, t.ident) end
+	return ns.FrameShows(t.anchor, t.ident)
+end
+
 -- Offsets are in the text's own units, so a spot in UIParent units is divided by the text's scale.
--- On a plate the spot is kept up to date, so a plate that goes away mid-flight leaves the text where
--- it was.
+-- On a plate or unit frame the spot is kept up to date, so one that goes away mid-flight leaves the
+-- text where it was. Numbers start above a plate and on a unit frame's centre.
 local function Move(t, elapsed)
 	local p = elapsed / DURATION
 	local scale = ns.db.scale
 	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
 	t:SetScale(scale)
 	local dx = t.dx * p
-	local dy = (t.straight and 0 or 20) + t.line + 70 * p - 20 * p * p
+	local dy = (t.straight and 0 or 20) + t.line + t.rise * p - 20 * p * p
 	t:ClearAllPoints()
-	if t.plate and ns.PlateShows(t.plate, t.name) then
-		t:SetPoint("CENTER", t.plate, "TOP", dx, dy)
-		local x, top = t.plate:GetCenter(), t.plate:GetTop()
-		if x and top then
-			local s = t.plate:GetEffectiveScale() / UIParent:GetEffectiveScale()
-			t.x, t.y = x * s, top * s
+	if t.anchor and Holds(t) then
+		t:SetPoint("CENTER", t.anchor, t.onPlate and "TOP" or "CENTER", dx, dy)
+		local x, y = t.anchor:GetCenter()
+		if t.onPlate then y = t.anchor:GetTop() end
+		if x and y then
+			local s = t.anchor:GetEffectiveScale() / UIParent:GetEffectiveScale()
+			t.x, t.y = x * s, y * s
 		end
 	else
-		t.plate = nil
+		t.anchor = nil
 		t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x / scale + dx, t.y / scale + dy)
 	end
 	t:SetAlpha(p > FADE_AT and 1 - (p - FADE_AT) / (1 - FADE_AT) or 1)
 end
 
--- plate: the nameplate to ride (nil: the spot x, y in UIParent units); straight: rise without the arc
-local function Show(plate, name, x, y, label, color, size, icon, pop, straight)
+-- where: { plate = f, name = n } or { frame = f, guid = g } to ride, or nil for the spot x, y in
+-- UIParent units; straight: rise without the arc; rise: how far it climbs (default 70)
+local function Show(where, x, y, label, color, size, icon, pop, straight, rise)
 	if #active >= MAX_TEXTS then Release(1) end
 	local t = Acquire()
 	t.text:SetFont(FontPath(), size, "OUTLINE")
@@ -166,14 +175,20 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, straight)
 	else
 		t.icon:Hide(); t.edge:Hide()
 	end
-	t.plate, t.name, t.x, t.y = plate, name, x, y
-	t.pop, t.straight = pop, straight
-	t.line = StackLine(plate or format("%d:%d", x, y), size)
+	t.anchor, t.onPlate, t.ident = nil, nil, nil
+	if where then
+		t.anchor = where.plate or where.frame
+		t.onPlate = where.plate ~= nil
+		t.ident = where.name or where.guid
+	end
+	t.x, t.y = x, y
+	t.pop, t.straight, t.rise = pop, straight, rise or 70
+	t.line = StackLine(t.anchor or format("%d:%d", x, y), size)
 	if straight then
 		t.dx = 0
 	else
 		arc = -arc
-		t.dx = arc * (35 + math.random() * 30)
+		t.dx = arc * (15 + math.random() * 15)
 	end
 	t.start = GetTime()
 	t:Show()
@@ -222,7 +237,17 @@ local function Who(guid, flags)
 	if band(flags, MINE) ~= 0 and band(flags, PET) ~= 0 then return "pet" end
 end
 
--- kind ("swing", "spell", "dot", "heal", "overheal" or "miss"), amount, crit, icon, miss type
+-- Absorb shields you put on someone. The 3.3.5a combat log gives no absorb amount, so they show as a
+-- word with the spell's icon, once when the shield goes on (Val'anyr refreshes it on every heal).
+-- Matched by name, which covers every rank.
+ns.SHIELDS = {}
+for _, id in ipairs({ 17, 47753, 58597, 64413 }) do  -- Power Word: Shield, Divine Aegis, Sacred Shield, Val'anyr
+	local name = GetSpellInfo(id)
+	if name then ns.SHIELDS[name] = true end
+end
+local HEALING = { heal = true, overheal = true, shield = true }
+
+-- kind ("swing", "spell", "dot", "heal", "overheal", "shield" or "miss"), amount, crit, icon, miss type
 local function Read(event, ...)
 	if event == "SWING_DAMAGE" then
 		local amount, _, _, _, _, _, crit = ...
@@ -242,6 +267,9 @@ local function Read(event, ...)
 		-- a heal on someone already full still shows, dimmed, with what it would have healed
 		if healed <= 0 then return "overheal", amount, crit, SpellIcon(id) end
 		return "heal", healed, crit, SpellIcon(id)
+	elseif event == "SPELL_AURA_APPLIED" then
+		local id, spellName, _, auraType = ...
+		if auraType == "BUFF" and ns.SHIELDS[spellName] then return "shield", nil, nil, SpellIcon(id) end
 	elseif event == "SWING_MISSED" then
 		local missType = ...
 		return "miss", nil, nil, ATTACK_ICON, missType
@@ -254,31 +282,48 @@ end
 local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 	local db, show = ns.db, ns.db.show
 	if who == "pet" and not show.pet then return end
-	if not show[kind == "overheal" and "heal" or kind] then return end
+	if not show[HEALING[kind] and "heal" or kind] then return end
 	if amount then
 		if amount <= 0 or not show[crit and "crit" or "normal"] then return end
 	end
-	local heal = kind == "heal" or kind == "overheal"
-	local isTarget = UnitExists("target") and UnitGUID("target") == guid
-	if db.anchor == "target" and not isTarget then return end
-	local plate
-	if db.anchor ~= "screen" then
-		plate = ns.PlateFor(guid, name)
-		ns.lastDest, ns.lastDestPlate = name, plate
-		-- no plate to ride: your heals and your target's numbers fall back to the screen
-		if not plate and not isTarget and not heal then return end
+	local heal = HEALING[kind]
+	local where, x, y, straight, rise
+	if heal then
+		-- heals go where healers look: the raid frame, the friend's plate, or their own column
+		if db.healsOn == "frames" then
+			local f = ns.FrameFor(guid)
+			if f then where, rise, straight = { frame = f, guid = guid }, 28, true end
+		elseif db.healsOn == "plates" then
+			local plate = ns.PlateFor(guid, name)
+			if plate then where = { plate = plate, name = name } end
+		end
+		if not where then
+			x, y = HealSpot()
+			straight = true
+		end
+	else
+		local isTarget = UnitExists("target") and UnitGUID("target") == guid
+		if db.anchor == "target" and not isTarget then return end
+		if db.anchor ~= "screen" then
+			local plate = ns.PlateFor(guid, name)
+			ns.lastDest, ns.lastDestPlate = name, plate
+			if plate then
+				where = { plate = plate, name = name }
+			elseif not isTarget then
+				-- no plate to ride: only your target's numbers fall back to the screen
+				return
+			end
+		end
+		x, y = ScreenSpot()
 	end
-	-- heals without a plate rise in their own column, so they work with friendly plates off
-	local x, y, straight = ScreenSpot()
-	if heal and not plate then
-		x, y = HealSpot()
-		straight = true
-	end
+	x, y = x or 0, y or 0
 
 	local label, color, size, pop = nil, COLOR.normal, SIZE, false
 	if kind == "miss" then
 		-- DODGE, PARRY, IMMUNE ... are the game's own words for each miss
 		label, color, size = _G[miss] or miss, COLOR.miss, SIZE * 0.8
+	elseif kind == "shield" then
+		label, color, size = "Shield", COLOR.shield, SIZE * 0.85
 	else
 		label = Abbrev(amount)
 		if kind == "heal" or kind == "overheal" then
@@ -296,12 +341,14 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 		end
 	end
 	if who == "pet" then size = size * 0.8 end
-	Show(plate, name, x, y, label, color, size, icon, pop, straight)
+	-- a raid frame is small: its numbers too
+	if where and where.frame then size = size * 0.65 end
+	Show(where, x, y, label, color, size, icon, pop, straight, rise)
 end
 
 local function Incoming(kind, amount, crit, icon)
 	local inc = ns.db.incoming
-	if kind == "miss" or kind == "overheal" or not amount or amount <= 0 then return end
+	if kind == "miss" or kind == "overheal" or kind == "shield" or not amount or amount <= 0 then return end
 	if kind == "heal" then
 		if not inc.heals then return end
 	elseif not inc.damage then
@@ -310,7 +357,7 @@ local function Incoming(kind, amount, crit, icon)
 	local x, y = IncomingSpot()
 	local heal = kind == "heal"
 	local size = crit and SIZE * 1.2 or SIZE * 0.9
-	Show(nil, nil, x, y, (heal and "+" or "-") .. Abbrev(amount), heal and COLOR.heal or COLOR.taken,
+	Show(nil, x, y, (heal and "+" or "-") .. Abbrev(amount), heal and COLOR.heal or COLOR.taken,
 		size, icon, crit and ns.db.critStyle == "pop", true)
 end
 
@@ -322,7 +369,9 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	if not who and not toMe then return end
 	local kind, amount, crit, icon, miss = Read(event, ...)
 	if not kind then return end
-	if toMe then
+	-- your heals on yourself are your heals: they go on your own raid frame like anyone else's
+	local ownHeal = who and HEALING[kind]
+	if toMe and not ownHeal then
 		Incoming(kind, amount, crit, icon)
 	else
 		Outgoing(who, destGUID, destName, kind, amount, crit, icon, miss)
@@ -348,6 +397,7 @@ function ns.Test()
 	local function pick() return book[math.random(math.max(#book, 1))] or ATTACK_ICON end
 	local guid, name = UnitGUID("target"), UnitName("target")
 	local plate = guid and ns.PlateFor(guid, name)
+	local where = plate and { plate = plate, name = name }
 	local x, y = ScreenSpot()
 	local db = ns.db
 	local hits = {
@@ -359,13 +409,13 @@ function ns.Test()
 	}
 	for i, h in ipairs(hits) do
 		table.insert(queued, { at = GetTime() + (i - 1) * 0.25, fn = function()
-			Show(plate, name, x, y, h[3], h[1], h[2], pick(), h[4], false)
+			Show(where, x, y, h[3], h[1], h[2], pick(), h[4], false)
 		end })
 	end
 	if db.incoming.damage or db.incoming.heals then
 		local ix, iy = IncomingSpot()
 		table.insert(queued, { at = GetTime() + 0.4, fn = function()
-			Show(nil, nil, ix, iy, "-" .. Abbrev(640), COLOR.taken, SIZE * 0.9, ATTACK_ICON, false, true)
+			Show(nil, ix, iy, "-" .. Abbrev(640), COLOR.taken, SIZE * 0.9, ATTACK_ICON, false, true)
 		end })
 	end
 end

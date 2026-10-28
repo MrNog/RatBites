@@ -8,5 +8,6 @@
 Core.lua
 Style.lua
 Plates.lua
+Frames.lua
 Bites.lua
 Options.lua

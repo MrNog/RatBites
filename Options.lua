@@ -151,9 +151,12 @@ function ns.CreateOptions()
 	y = Section(panel, y, "General")
 	y = Check(panel, y, "Enabled",
 		function() return db.enabled end, function(v) db.enabled = v end)
-	y = Choice(panel, y, "Show on",
+	y = Choice(panel, y, "Damage on",
 		{ { "plates", "Nameplates" }, { "target", "Target only" }, { "screen", "Center screen" } },
 		function() return db.anchor end, function(v) db.anchor = v end)
+	y = Choice(panel, y, "Heals on",
+		{ { "frames", "Raid frames" }, { "plates", "Nameplates" }, { "column", "Column" } },
+		function() return db.healsOn end, function(v) db.healsOn = v end)
 	y = Stepper(panel, y, "Size", 0.5, 2, 0.1, function(v) return format("%d%%", v * 100 + 0.5) end,
 		function() return db.scale end, function(v) db.scale = v end)
 	y = Choice(panel, y, "Font", fonts,

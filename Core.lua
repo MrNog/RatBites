@@ -1,11 +1,14 @@
 local ADDON, ns = ...
 
--- anchor: "plates" = on each enemy's nameplate, "target" = your target only, "screen" = a fixed spot
+-- anchor (damage): "plates" = on each enemy's nameplate, "target" = your target only, "screen" = a fixed spot
+-- healsOn: "frames" = the healed player's raid frame, "plates" = their nameplate, "column" = right of
+-- the screen's centre; heals with no frame or plate to ride go to the column too
 -- critStyle: "pop" = starts large and settles, "big" = larger, "plain" = colour only
 -- numbers: "short" = 12.4k, "full" = 12,431, "raw" = 12431
 ns.DEFAULTS = {
 	enabled = true,
 	anchor = "plates",
+	healsOn = "frames",
 	scale = 1,
 	font = "friz",
 	icons = true,
