@@ -179,6 +179,9 @@ local function GeneralPage(page, db, flag)
 	y = Choice(page, y, "Show on",
 		{ { "plates", "Nameplates" }, { "box", "My box" } },
 		flag(db, "anchor"))
+	y = Choice(page, y, "Heals with no nameplate",
+		{ { "box", "My box" }, { "column", "Column" }, { "hide", "Hide" } },
+		flag(db, "noPlateHeals"))
 	y = Section(page, y, "Receiving: what lands on you")
 	y = Check(page, y, "Also float over my character", flag(db, "receivedFloat"))
 	y = Section(page, y, "Window")

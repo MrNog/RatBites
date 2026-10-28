@@ -61,6 +61,6 @@
 
 3.3.5a nameplates don't carry a unit id, so numbers are matched to plates by name. When several mobs
 with the same name are on screen, your target always gets its numbers; the others keep the plate they
-were last seen on. A heal on someone without a plate rises in a column right of the screen's centre.
+were last seen on. A heal on someone without a plate on screen goes to My box (or a column right of the screen's centre, or nowhere: your choice).
 
 See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

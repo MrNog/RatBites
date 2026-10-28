@@ -406,8 +406,13 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 	if plate then
 		Show(plate, name, 0, 0, label, color, size, icon, pop)
 	elseif HEALING[kind] then
-		local x, y = HealSpot()
-		Show(nil, nil, x, y, label, color, size, icon, pop, true)
+		-- a heal on someone with no plate on screen: into My box, a column right of centre, or nowhere
+		if db.noPlateHeals == "box" then
+			ns.BoxAdd("mine", label, color, size, icon, amount, "+")
+		elseif db.noPlateHeals == "column" then
+			local x, y = HealSpot()
+			Show(nil, nil, x, y, label, color, size, icon, pop, true)
+		end
 	elseif UnitExists("target") and UnitGUID("target") == guid then
 		local x, y = ScreenSpot()
 		Show(nil, nil, x, y, label, color, size, icon, pop)

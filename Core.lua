@@ -9,6 +9,7 @@ ns.DEFAULTS = {
 	enabled = true,
 	anchor = "plates",
 	receivedFloat = false,
+	noPlateHeals = "box",  -- your heals on someone with no plate on screen: "box", "column" or "hide"
 	animation = "arc",
 	height = 70,
 	duration = 1.5,
