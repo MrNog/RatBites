@@ -26,11 +26,11 @@ local COLOR = {
 	crit = { 1, 0.4, 0, thick = true },
 	miss = { 0.9, 0.9, 0.9 },
 	heal = { 0.4, 0.88, 0.45 },
-	healCrit = { 0.15, 1, 0.05, thick = true },
+	healCrit = { 0.25, 1, 0.72, thick = true },
 	overheal = { 0.45, 0.62, 0.45 },
 	shield = { 0.55, 0.82, 1 },
 	taken = { 0.88, 0.32, 0.27 },
-	takenCrit = { 1, 0.08, 0.02, thick = true },
+	takenCrit = { 1, 0.22, 0.45, thick = true },
 }
 ns.COLOR = COLOR
 
