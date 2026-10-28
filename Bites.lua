@@ -276,6 +276,8 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	-- the real font size, Text size included; every icon has one size (a normal hit's), so crits
 	-- grow only their text
 	t.size, t.outline, t.grown = size * db.scale, color.thick and "THICKOUTLINE" or "OUTLINE", nil
+	-- a new font string takes no text before it has a font
+	Size(t, pop and 1.6 or 1)
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
 	if icon and db.icons then
