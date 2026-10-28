@@ -7,7 +7,6 @@ local ADDON, ns = ...
 
 local LINE_GAP = 4
 local FADE = 0.5   -- a line fades over its last half second
-local MERGE_TIME = 0.5
 local EDGE_PAD = 8  -- left- or right-aligned lines keep this far from the box's side
 local NAMES = { mine = "My box", received = "Received box" }
 
@@ -158,11 +157,20 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	local box = boxes[key]
 	if not box then return end
 	local db = ns.db
-	-- The same spell landing again right away in the same colour (an AoE on five mobs, a glyph's five
-	-- splashes) joins the line before it as one total with "x5", as xCT does, so a burst can't push
-	-- the line that caused it out of the box.
-	local last = box.lines[1]
-	if last and icon and last.iconPath == icon and last.color == color and GetTime() - last.at < MERGE_TIME then
+	-- The same spell landing again within the merge time in the same colour (an AoE on five mobs, a
+	-- glyph's five splashes, a proc on every swing) joins its line as one total with "x5", as xCT
+	-- does, wherever that line is, so repeats can't push other lines out of the box.
+	local last
+	local window = db.boxMerge
+	if icon and window > 0 then
+		for _, line in ipairs(box.lines) do
+			if line.iconPath == icon and line.color == color and GetTime() - line.first < window then
+				last = line
+				break
+			end
+		end
+	end
+	if last then
 		last.count = last.count + 1
 		if amount and last.total then
 			last.total = last.total + amount
@@ -176,7 +184,7 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	end
 	local line = table.remove(box.pool) or NewLine(box)
 	line.label, line.iconPath, line.color, line.count = label, icon, color, 1
-	line.total, line.sign = amount, sign
+	line.total, line.sign, line.first = amount, sign, GetTime()
 	size = size * db.scale
 	line.text:SetFont(ns.FontPath(), size, color.thick and "THICKOUTLINE" or "OUTLINE")
 	line.text:SetText(label)
