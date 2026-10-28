@@ -85,6 +85,8 @@ SlashCmdList.RATBITES = function(msg)
 	msg = strlower(strtrim(msg or ""))
 	if msg == "test" then
 		ns.Test()
+	elseif msg == "plates" then
+		ns.ReportPlates()
 	else
 		ns.OpenOptions()
 	end

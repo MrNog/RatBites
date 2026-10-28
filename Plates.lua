@@ -44,8 +44,14 @@ local function IsTargetPlate(f)
 	return f:GetAlpha() > 0.99
 end
 
+-- plates show a player's name without the realm the combat log may add ("Name-Realm")
+local function Bare(name)
+	return name and (name:match("^([^%-]+)%-") or name)
+end
+
 -- the plate showing this unit, or nil when none can be told apart
 function ns.PlateFor(guid, name)
+	name = Bare(name)
 	if not name then return nil end
 	Scan()
 	local only, count = nil, 0
@@ -67,7 +73,22 @@ end
 
 -- true while the plate still shows the unit it was matched to
 function ns.PlateShows(plate, name)
-	return plate:IsShown() and plates[plate] and plates[plate]:GetText() == name
+	return plate:IsShown() and plates[plate] and plates[plate]:GetText() == Bare(name)
+end
+
+-- /bites plates: what RatBites sees, to tell a plate it can't find from a name that doesn't match
+function ns.ReportPlates()
+	Scan()
+	local total, names = 0, {}
+	for f, text in pairs(plates) do
+		total = total + 1
+		if f:IsShown() then names[#names + 1] = tostring(text:GetText()) end
+	end
+	ns.Print(format("%d WorldFrame children, %d plates found, %d shown: %s", WorldFrame:GetNumChildren(),
+		total, #names, table.concat(names, ", ")))
+	if ns.lastDest then
+		ns.Print(format("last number went to \"%s\" (%s)", ns.lastDest, ns.lastDestPlate and "on its plate" or "no plate"))
+	end
 end
 
 -- a mob's GUID is gone for good once it dies

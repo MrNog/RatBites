@@ -259,6 +259,7 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 	local plate
 	if db.anchor ~= "screen" then
 		plate = ns.PlateFor(guid, name)
+		ns.lastDest, ns.lastDestPlate = name, plate
 		-- no plate to ride: only your target's numbers fall back to the screen
 		if not plate and not isTarget then return end
 	end
