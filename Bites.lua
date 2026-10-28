@@ -168,7 +168,7 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, straight)
 	end
 	t.plate, t.name, t.x, t.y = plate, name, x, y
 	t.pop, t.straight = pop, straight
-	t.line = StackLine(plate or (straight and "incoming" or "screen"), size)
+	t.line = StackLine(plate or format("%d:%d", x, y), size)
 	if straight then
 		t.dx = 0
 	else
@@ -197,9 +197,13 @@ root:SetScript("OnUpdate", function()
 	end
 end)
 
--- where numbers go without a plate: above the screen's centre, and Incoming left of it
+-- where numbers go without a plate: above the screen's centre, your heals right of it and Incoming
+-- left of it
 local function ScreenSpot()
 	return UIParent:GetWidth() / 2, UIParent:GetHeight() / 2 + 140
+end
+local function HealSpot()
+	return UIParent:GetWidth() / 2 + 160, UIParent:GetHeight() / 2 - 40
 end
 local function IncomingSpot()
 	return UIParent:GetWidth() / 2 - 160, UIParent:GetHeight() / 2 - 40
@@ -254,16 +258,22 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 	if amount then
 		if amount <= 0 or not show[crit and "crit" or "normal"] then return end
 	end
+	local heal = kind == "heal" or kind == "overheal"
 	local isTarget = UnitExists("target") and UnitGUID("target") == guid
 	if db.anchor == "target" and not isTarget then return end
 	local plate
 	if db.anchor ~= "screen" then
 		plate = ns.PlateFor(guid, name)
 		ns.lastDest, ns.lastDestPlate = name, plate
-		-- no plate to ride: only your target's numbers fall back to the screen
-		if not plate and not isTarget then return end
+		-- no plate to ride: your heals and your target's numbers fall back to the screen
+		if not plate and not isTarget and not heal then return end
 	end
-	local x, y = ScreenSpot()
+	-- heals without a plate rise in their own column, so they work with friendly plates off
+	local x, y, straight = ScreenSpot()
+	if heal and not plate then
+		x, y = HealSpot()
+		straight = true
+	end
 
 	local label, color, size, pop = nil, COLOR.normal, SIZE, false
 	if kind == "miss" then
@@ -286,7 +296,7 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 		end
 	end
 	if who == "pet" then size = size * 0.8 end
-	Show(plate, name, x, y, label, color, size, icon, pop, false)
+	Show(plate, name, x, y, label, color, size, icon, pop, straight)
 end
 
 local function Incoming(kind, amount, crit, icon)
