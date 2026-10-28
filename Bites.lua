@@ -301,7 +301,7 @@ ns.On("PLAYER_LOGIN", function()
 end)
 
 --------------------------------------------------------------------------------
--- /rb test: one of each kind on your target's plate, or above the screen's centre
+-- /bites test: one of each kind on your target's plate, or above the screen's centre
 --------------------------------------------------------------------------------
 
 function ns.Test()

@@ -12,8 +12,8 @@ Damage and heal numbers with spell icons, right on each nameplate. For World of 
 
 ## Commands
 
-- `/rb` (or `/ratbites`): settings
-- `/rb test`: one number of each kind on your target
+- `/bites` (or `/ratbites`): settings
+- `/bites test`: one number of each kind on your target
 
 ## Notes
 

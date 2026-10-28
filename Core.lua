@@ -78,7 +78,8 @@ ns.On("PLAYER_LOGIN", function()
 	ns.CreateOptions()
 end)
 
-SLASH_RATBITES1 = "/rb"
+-- /rb is the game's Raid Browser
+SLASH_RATBITES1 = "/bites"
 SLASH_RATBITES2 = "/ratbites"
 SlashCmdList.RATBITES = function(msg)
 	msg = strlower(strtrim(msg or ""))
