@@ -641,8 +641,6 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 			if db.hideSpells[spell] then return end
 		end
 	end
-	-- small numbers hide below the chosen amount; crits always show
-	if amount and not crit and amount < db.minAmount then return end
 	if kind == "shield" then
 		amount = ShieldSize((...), destGUID)
 		-- a refresh only shows when it has a size to tell: Val'anyr refreshes on every heal

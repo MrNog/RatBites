@@ -365,63 +365,94 @@ local function Confirm(question, yes, onYes)
 	confirm:Show()
 end
 
--- Your spells, as RatBites has seen them, in a list that scrolls with the mouse wheel: a tick shows a
--- spell, untick it to hide it. The list is read again each time the window refreshes.
-local SPELL_ROWS = 10
+-- Your spells in a grid two wide that scrolls with the mouse wheel: every spell in your spellbook
+-- (its class tabs; the General tab and passives left out), plus the hidden effects RatBites has
+-- seen from you (Judgement of Light heals, glyph splashes, beacon copies). A tick shows a spell,
+-- untick it to hide it. The grid is read again each time the window refreshes.
+local SPELL_LINES, SPELL_COLS = 12, 2
 
-local function SpellsPage(page)
-	local y = Section(page, TOP, "Small numbers", true, "Hide your small hits and heals. Crits always show.")
-	y = Choice(page, y, "Hide numbers below",
-		{ { 0, "Off" }, { 250, "250" }, { 500, "500" }, { 1000, "1,000" }, { 2000, "2,000" }, { 5000, "5,000" } },
-		flag("minAmount"))
-	y = Section(page, y, "Your spells", nil, "Untick a spell to hide it. A spell shows up here once you've used it.")
-	local empty = Text(page, 13, C.textDim)
-	empty:SetPoint("TOPLEFT", MARGIN + 2, y - 10)
-	empty:SetText("Nothing yet: cast a few spells and they'll be listed here.")
-	local rows, list, first = {}, {}, 1
-	local function fill()
-		wipe(list)
-		for name, icon in pairs(ns.db.seen) do list[#list + 1] = { name, icon } end
-		table.sort(list, function(a, b) return a[1] < b[1] end)
-		first = math.max(1, math.min(first, #list - SPELL_ROWS + 1))
-		if #list == 0 then empty:Show() else empty:Hide() end
-		for i, row in ipairs(rows) do
-			local entry = list[first + i - 1]
-			if entry then
-				row.spell = entry[1]
-				row.label:SetText(entry[1])
-				row.icon:SetTexture(type(entry[2]) == "string" and entry[2] or nil)
-				if ns.db.hideSpells[entry[1]] then row.tick:Hide() else row.tick:Show() end
-				row:Show()
-			else
-				row:Hide()
+local function Spellbook(into)
+	for tab = 2, GetNumSpellTabs() do
+		local _, _, offset, count = GetSpellTabInfo(tab)
+		for i = offset + 1, offset + count do
+			local name = GetSpellName(i, BOOKTYPE_SPELL)
+			if name and not IsPassiveSpell(i, BOOKTYPE_SPELL) and not into[name] then
+				into[name] = GetSpellTexture(i, BOOKTYPE_SPELL) or true
 			end
 		end
 	end
-	for i = 1, SPELL_ROWS do
-		local row = Row(page, y, "")
-		row.label:ClearAllPoints()
-		row.label:SetPoint("LEFT", 42, 0)
-		row.icon = row:CreateTexture(nil, "ARTWORK")
-		row.icon:SetWidth(22); row.icon:SetHeight(22)
-		row.icon:SetPoint("LEFT", 10, 0)
-		row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-		local box, tick = ns.CheckBox(row, 20)
-		box:SetPoint("RIGHT", -8, 0)
-		row.tick = tick
-		row:SetScript("OnClick", function(self)
-			local hide = ns.db.hideSpells
-			hide[self.spell] = not hide[self.spell] or nil
-			fill()
-		end)
-		row:EnableMouseWheel(true)
-		row:SetScript("OnMouseWheel", function(_, delta)
-			first = first - delta * 2
-			fill()
-		end)
-		rows[i] = row
-		y = y - ROW_H
+end
+
+local function SpellsPage(page)
+	local y = Section(page, TOP, "Your spells", true,
+		"Untick a spell to hide its numbers. Scroll for more.")
+	local cellW = (COL_W + 16) / SPELL_COLS
+	local cells, list, first = {}, {}, 1
+	local function fill()
+		local known = {}
+		Spellbook(known)
+		for name, icon in pairs(ns.db.seen) do
+			if not known[name] or known[name] == true then known[name] = icon end
+		end
+		wipe(list)
+		for name, icon in pairs(known) do list[#list + 1] = { name, icon } end
+		table.sort(list, function(a, b) return a[1] < b[1] end)
+		local shown = SPELL_LINES * SPELL_COLS
+		first = math.max(1, math.min(first, #list - shown + 1))
+		for i, cell in ipairs(cells) do
+			local entry = list[first + i - 1]
+			if entry then
+				cell.spell = entry[1]
+				cell.label:SetText(entry[1])
+				cell.icon:SetTexture(type(entry[2]) == "string" and entry[2] or nil)
+				if ns.db.hideSpells[entry[1]] then cell.tick:Hide() else cell.tick:Show() end
+				cell:Show()
+			else
+				cell:Hide()
+			end
+		end
 	end
+	local function scroll(_, delta)
+		first = first - delta * SPELL_COLS * 2
+		fill()
+	end
+	for line = 1, SPELL_LINES do
+		for col = 1, SPELL_COLS do
+			local cell = CreateFrame("Button", nil, page)
+			cell:SetWidth(cellW - 4); cell:SetHeight(ROW_H - 2)
+			cell:SetPoint("TOPLEFT", MARGIN - 8 + (col - 1) * cellW, y - (line - 1) * ROW_H)
+			if line % 2 == 0 then
+				local band = cell:CreateTexture(nil, "BACKGROUND")
+				band:SetTexture(ns.FLAT)
+				band:SetVertexColor(1, 1, 1, 0.03)
+				band:SetAllPoints(cell)
+			end
+			local hover = cell:CreateTexture(nil, "HIGHLIGHT")
+			hover:SetTexture(ns.FLAT)
+			hover:SetVertexColor(1, 1, 1, 0.05)
+			hover:SetAllPoints(cell)
+			cell.icon = cell:CreateTexture(nil, "ARTWORK")
+			cell.icon:SetWidth(22); cell.icon:SetHeight(22)
+			cell.icon:SetPoint("LEFT", 8, 0)
+			cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+			cell.label = Text(cell, 13)
+			cell.label:SetPoint("LEFT", 38, 0)
+			cell.label:SetPoint("RIGHT", -34, 0)
+			cell.label:SetJustifyH("LEFT")
+			local box, tick = ns.CheckBox(cell, 20)
+			box:SetPoint("RIGHT", -8, 0)
+			cell.tick = tick
+			cell:SetScript("OnClick", function(self)
+				local hide = ns.db.hideSpells
+				hide[self.spell] = not hide[self.spell] or nil
+				fill()
+			end)
+			cell:EnableMouseWheel(true)
+			cell:SetScript("OnMouseWheel", scroll)
+			cells[#cells + 1] = cell
+		end
+	end
+	y = y - SPELL_LINES * ROW_H
 	refreshers[#refreshers + 1] = fill
 	return y
 end
