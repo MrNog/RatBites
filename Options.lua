@@ -371,8 +371,19 @@ end
 -- untick it to hide it. The grid is read again each time the window refreshes.
 local SPELL_LINES, SPELL_COLS = 12, 2
 
--- Only spells that make numbers: their tooltip speaks of damage, healing or absorbing (auras,
--- utility and travel spells don't). Read through a hidden tooltip, once per spell name.
+-- Only spells that make numbers: their tooltip gives an amount of damage ("1,200 Holy damage"),
+-- healing ("heals ... for 4,888") or absorbing ("absorbs 500"). Words alone don't count:
+-- "reduces damage taken", "immune to all damage", "increases damage and healing" are not hits.
+-- Read through a hidden tooltip, once per spell name.
+local function DealsAmount(text)
+	if text:find("%d[%d,]* to %d[%d,]* %a+ damage") or text:find("%d[%d,]* %a+ damage")
+		or text:find("%d[%d,]* damage") then
+		return true
+	end
+	if text:find("heal") and (text:find("for %d") or text:find("%d[%d,]* to %d")) then return true end
+	return text:find("absorbs? %d") or text:find("absorbing %d")
+end
+
 local scanTip, makesNumbers = nil, {}
 local function MakesNumbers(i, name)
 	if makesNumbers[name] ~= nil then return makesNumbers[name] end
@@ -387,8 +398,7 @@ local function MakesNumbers(i, name)
 		local fs = _G["RatBitesScanTipTextLeft" .. line]
 		local text = fs and fs:GetText()
 		if text then
-			text = text:lower()
-			if text:find("damage") or text:find("heal") or text:find("absorb") then
+			if DealsAmount(text:lower()) then
 				found = true
 				break
 			end

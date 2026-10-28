@@ -171,6 +171,11 @@ end
 -- crits keep standing out).
 local function Upgrade(db)
 	UpgradeRoute(db)
+	-- spells once listed from misses (interrupts, immunes) are cleared, once; real ones come back
+	if not db.seenClean then
+		db.seen = {}
+		db.seenClean = true
+	end
 	-- crits went from 2.7x to 5x by default: a profile still on the old default follows, once
 	if not db.critSizeSet then
 		if db.critSize == 2.7 then db.critSize = 5 end

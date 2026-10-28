@@ -637,7 +637,8 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	if who then
 		local spell = event:find("^SWING") and MELEE or select(2, ...)
 		if type(spell) == "string" then
-			if type(db.seen[spell]) ~= "string" then db.seen[spell] = icon or true end
+			-- a miss or an immune is no number: it doesn't list a spell
+			if kind ~= "miss" and type(db.seen[spell]) ~= "string" then db.seen[spell] = icon or true end
 			if db.hideSpells[spell] then return end
 		end
 	end
