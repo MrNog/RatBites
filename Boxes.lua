@@ -53,18 +53,23 @@ local function Drop(box, i)
 end
 
 -- A line is an anchor point with its icon and text around it. Centred, the text sits on the point;
--- left, the point is the box's left edge and icon then text run right from it; right, the text ends
--- on the box's right edge with the icon before it.
+-- left, the point is the box's left edge and icon then text run right from it; right, mirrored: the icon
+-- sits on the box's right edge with the text before it.
 local function Align(box, line)
 	local align = ns.db.boxes[box.key].align
+	local icon = line.icon:IsShown() and line.icon:GetWidth() + 4 or 0
 	line.text:ClearAllPoints()
+	line.icon:ClearAllPoints()
+	if align == "right" then
+		-- mirrored: the icon on the right edge, the number before it
+		line.icon:SetPoint("LEFT", line.text, "RIGHT", 4, 0)
+		line.text:SetPoint("RIGHT", line, "CENTER", -icon, 0)
+		return box:GetWidth() - EDGE_PAD
+	end
+	line.icon:SetPoint("RIGHT", line.text, "LEFT", -4, 0)
 	if align == "left" then
-		local icon = line.icon:IsShown() and line.icon:GetWidth() + 4 or 0
 		line.text:SetPoint("LEFT", line, "CENTER", icon, 0)
 		return EDGE_PAD
-	elseif align == "right" then
-		line.text:SetPoint("RIGHT", line, "CENTER", 0, 0)
-		return box:GetWidth() - EDGE_PAD
 	end
 	line.text:SetPoint("CENTER", line, "CENTER", 0, 0)
 	return box:GetWidth() / 2
