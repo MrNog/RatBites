@@ -20,6 +20,7 @@ local function Changed()
 	ns.ApplyBlizzardText()
 	ns.RelayoutBoxes()
 	ns.UpdateMinimapButton()
+	ns.RefreshLegend()
 end
 
 -- plain text, no drop shadow (the shadow made small text look bold)
@@ -198,6 +199,9 @@ local function LookPage(page, db, flag)
 	y = Check(page, y, "Spell icons", flag(db, "icons"))
 	y = Stepper(page, y, "Icon size", 0.5, 2, 0.1, Percent, flag(db, "iconScale"))
 	y = Section(page, y, "Colors")
+	y = Action(page, y, "Color examples",
+		function() ns.ToggleLegend() end,
+		function() return "Show (/bites colors)" end)
 	y = Choice(page, y, "Critical hits",
 		{ { "pop", "Pop" }, { "big", "Bigger" }, { "plain", "Plain" } },
 		flag(db, "critStyle"))

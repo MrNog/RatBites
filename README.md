@@ -17,6 +17,8 @@ Damage and heal numbers with spell icons, right on each nameplate. For World of 
 
 - `/bites` (or `/ratbites`): settings
 - `/bites test`: one number of each kind on your target
+- `/bites colors`: every kind of number in its colour, as your settings draw it
+- `/bites move`: unlock the boxes to move and resize them
 
 ## Notes
 

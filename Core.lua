@@ -124,6 +124,8 @@ SlashCmdList.RATBITES = function(msg)
 	msg = strlower(strtrim(msg or ""))
 	if msg == "test" then
 		ns.Test()
+	elseif msg == "colors" or msg == "colours" then
+		ns.ToggleLegend()
 	elseif msg == "move" then
 		ns.SetBoxesUnlocked(not ns.BoxesUnlocked())
 	elseif msg == "plates" then

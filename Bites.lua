@@ -553,3 +553,107 @@ function ns.Test()
 		end })
 	end
 end
+
+--------------------------------------------------------------------------------
+-- /bites colors: every kind of number in its colour, size and outline as your settings draw it
+--------------------------------------------------------------------------------
+
+local legend
+
+-- label, colour, sample, size against a normal hit; built on each opening, so it follows the settings
+local function LegendEntries()
+	local db = ns.db
+	local critSize = db.critStyle == "big" and 1.5 or db.critStyle == "pop" and 1.3 or 1
+	local normal = db.classColorFor == "normal" and ns.classColor or COLOR.normal
+	local crit = db.classColorFor == "crit" and ns.classCrit or COLOR.crit
+	local healCrit = db.classColorFor == "crit" and ns.classCrit or COLOR.healCrit
+	return {
+		{ "Normal hit", normal, "1234", 1 },
+		{ "Big hit", db.bigGold and COLOR.big or normal, "2331", 1.15 },
+		{ "Critical hit", crit, "4.8k", critSize },
+		{ "Damage over time", normal, "412", 0.8 },
+		{ "Pet", normal, "310", 0.8 },
+		{ "Miss", COLOR.miss, DODGE, 0.8 },
+		{ "Heal", COLOR.heal, "+1923", 1 },
+		{ "Heal crit", healCrit, "+4.1k", critSize },
+		{ "Overheal", COLOR.overheal, "+1.2k", 1 },
+		{ "Shield", COLOR.shield, "+177", 0.85 },
+		{ "Damage taken", COLOR.taken, "-640", 0.9 },
+		{ "Damage taken crit", COLOR.takenCrit, "-2.1k", 1.2 },
+	}
+end
+
+local LEGEND_W, LEGEND_ROW, LEGEND_TOP = 340, 34, -44
+
+local function BuildLegend()
+	local f = CreateFrame("Frame", "RatBitesColors", UIParent)
+	f:SetWidth(LEGEND_W)
+	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)
+	f:EnableMouse(true)
+	f:SetMovable(true)
+	f:SetClampedToScreen(true)
+	f:SetPoint("CENTER", 380, 0)
+	ns.SkinWindow(f)
+	tinsert(UISpecialFrames, "RatBitesColors")
+	local head, title = ns.TitleBar(f, 30)
+	head:EnableMouse(true)
+	head:RegisterForDrag("LeftButton")
+	head:SetScript("OnDragStart", function() f:StartMoving() end)
+	head:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+	title:SetText("RatBites colors")
+	f.rows = {}
+	local count = #LegendEntries()
+	for i = 1, count do
+		local row = CreateFrame("Frame", nil, f)
+		row:SetPoint("TOPLEFT", 22, LEGEND_TOP - (i - 1) * LEGEND_ROW)
+		row:SetWidth(LEGEND_W - 44)
+		row:SetHeight(LEGEND_ROW)
+		row.icon = row:CreateTexture(nil, "ARTWORK")
+		row.icon:SetPoint("LEFT", 0, 0)
+		row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+		row.number = row:CreateFontString(nil, "OVERLAY")
+		row.number:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+		row.number:SetShadowColor(0, 0, 0, 1)
+		row.number:SetShadowOffset(1, -1)
+		row.name = row:CreateFontString(nil, "OVERLAY")
+		row.name:SetFont(STANDARD_TEXT_FONT, 13)
+		row.name:SetTextColor(ns.rgb(ns.C.textDim))
+		row.name:SetPoint("RIGHT", 0, 0)
+		f.rows[i] = row
+	end
+	f:SetHeight(-LEGEND_TOP + count * LEGEND_ROW + 16)
+	return f
+end
+
+local function PaintLegend()
+	local db = ns.db
+	local icon = GetInventoryItemTexture("player", 16) or ATTACK_ICON
+	local iconSize = SIZE * db.iconScale
+	for i, e in ipairs(LegendEntries()) do
+		local row = legend.rows[i]
+		local color = e[2]
+		row.icon:SetTexture(icon)
+		row.icon:SetWidth(iconSize); row.icon:SetHeight(iconSize)
+		if db.icons then row.icon:Show() else row.icon:Hide() end
+		row.number:SetFont(ns.FontPath(), SIZE * e[4], color.thick and "THICKOUTLINE" or "OUTLINE")
+		row.number:SetTextColor(color[1], color[2], color[3])
+		row.number:SetText(e[3])
+		row.name:SetText(e[1])
+	end
+end
+
+function ns.ToggleLegend()
+	legend = legend or BuildLegend()
+	if legend:IsShown() then
+		legend:Hide()
+	else
+		PaintLegend()
+		legend:Show()
+	end
+end
+
+-- repaint an open legend after a setting changes
+function ns.RefreshLegend()
+	if legend and legend:IsShown() then PaintLegend() end
+end
