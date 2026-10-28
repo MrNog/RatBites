@@ -309,6 +309,8 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 		t.dx = arc * (sp[1] + math.random() * sp[2])
 	end
 	local startY = t.y + (column and 0 or START_GAP) + t.line * db.scale
+	-- a crit starts a normal line above the rest, so at its size it doesn't cover hits landing with it
+	if color.thick then startY = startY + (SIZE + 6) * db.scale end
 	if t.anim == "fall" then startY = startY + t.rise end
 	t:ClearAllPoints()
 	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", math.floor(t.x + 0.5), math.floor(startY + 0.5))

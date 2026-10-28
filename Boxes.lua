@@ -187,11 +187,13 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	-- that line is, so repeats can't push other lines out of the box.
 	local last
 	local window = db.boxes[key].merge
-	if icon and window > 0 then
+	-- a crit (drawn with the thick outline) always keeps a line of its own
+	if icon and window > 0 and not color.thick then
 		for _, line in ipairs(box.lines) do
 			-- numbers of one kind (sign: damage "", heals "+", taken "-") add up whatever their colour,
-			-- crits included; a word only joins the same word
-			local same = line.sign == sign and (amount and line.total or (not amount and line.label == label))
+			-- crits apart; a word only joins the same word
+			local same = not line.color.thick and line.sign == sign
+				and (amount and line.total or (not amount and line.label == label))
 			if line.iconPath == icon and same and GetTime() - line.first < window then
 				last = line
 				break
