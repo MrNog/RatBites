@@ -69,4 +69,8 @@ function ns.UpdateMinimapButton()
 	end
 end
 
-ns.On("PLAYER_LOGIN", function() ns.UpdateMinimapButton() end)
+-- made as soon as RatBites loads (its settings are read by then), so minimap button bars that
+-- collect buttons at login find it on their first pass
+ns.On("ADDON_LOADED", function(name)
+	if name == ADDON then ns.UpdateMinimapButton() end
+end)
