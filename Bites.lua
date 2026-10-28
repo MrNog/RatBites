@@ -198,6 +198,7 @@ end
 -- On a plate the spot is kept up to date while the plate still shows the same name, so a plate that
 -- goes away mid-flight leaves the text where it was.
 local START_GAP = 12  -- how far above the plate a number starts
+local DOT_LINGER = 3.5  -- sec a DoT's number stays on its plate after a tick
 
 -- What a number starts above: the plate, or with ElvUI's plates the row of your debuffs on it, so
 -- the number doesn't sit on top of the icons.
@@ -268,6 +269,8 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, ti
 	t.straight = column
 	t.anim = column and "rise" or db.animation
 	t.pop, t.rise, t.duration = pop, db.height, db.duration
+	-- a DoT's number outlives the gap to its next tick (most tick every 3 sec), so the ticks join it
+	if tick and plate then t.duration = math.max(db.duration, DOT_LINGER) end
 	t.line = StackLine(plate or format("%d:%d", x, y), size)
 	if t.straight then
 		t.dx = 0
