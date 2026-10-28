@@ -5,9 +5,8 @@ local ADDON, ns = ...
 -- of the boxes (Boxes.lua) as a line.
 
 local FADE_AT = 0.65      -- share of a number's time before its fade starts
-local SLAM_TIME = 0.12    -- a popping crit slams from big down past its size over this long
-local POP_TIME = 0.24     -- ... then bounces back to its size by this time
-local SLAM_SIZE = 2.3     -- how big a popping crit starts
+local POP_TIME = 0.15     -- a popping crit eases from POP_SIZE down to its size over this long
+local POP_SIZE = 1.8      -- how big a popping crit appears
 local SIZE = 20           -- a normal hit's font size at scale 1, and every icon's size
 ns.SIZE = SIZE
 local MAX_TEXTS = 40
@@ -208,14 +207,11 @@ local function PlateTop(plate)
 	if debuffs and debuffs:IsShown() and debuffs[1] and debuffs[1]:IsShown() then return debuffs end
 	return plate
 end
--- A popping crit lands like a blow: it starts SLAM_SIZE big and slams down a little past its size,
--- bounces back to it, and only starts its path once it has landed.
-local function Slam(elapsed)
-	if elapsed < SLAM_TIME then
-		local f = elapsed / SLAM_TIME
-		return SLAM_SIZE + (0.88 - SLAM_SIZE) * f * f
-	end
-	return 0.88 + 0.12 * (elapsed - SLAM_TIME) / (POP_TIME - SLAM_TIME)
+-- A popping crit appears at once POP_SIZE big and eases down to its size (fast first, then gentle,
+-- never below it), and only starts its path once it has settled.
+local function Pop(elapsed)
+	local f = 1 - elapsed / POP_TIME
+	return 1 + (POP_SIZE - 1) * f * f
 end
 
 local function Move(t, elapsed)
@@ -225,7 +221,7 @@ local function Move(t, elapsed)
 	local p = travel / (t.pop and t.duration - POP_TIME or t.duration)
 	local textScale = ns.db.scale
 	local scale = textScale
-	if landing then scale = scale * Slam(elapsed) end
+	if landing then scale = scale * Pop(elapsed) end
 	t:SetScale(scale)
 	local dx, dy = Path(t, p)
 	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
