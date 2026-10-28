@@ -232,7 +232,9 @@ end
 -- sheet holds them in its lower half. Returns the fill and edge pieces, to be tinted by ns.TintChamfer.
 local SMALL_U, SMALL_CORNER = { 0, 16 / 128, 48 / 128, 64 / 128 }, 8
 
-local function smallPieces(frame, layer, ox)
+-- openBottom: the bottom row reuses the middle row's slices (straight sides, no bottom line), for a
+-- tab that stands on a line
+local function smallPieces(frame, layer, ox, openBottom)
 	local pieces = {}
 	local xs = { { "LEFT", 0 }, { "LEFT", SMALL_CORNER }, { "RIGHT", -SMALL_CORNER }, { "RIGHT", 0 } }
 	local ys = { { "TOP", 0 }, { "TOP", -SMALL_CORNER }, { "BOTTOM", SMALL_CORNER }, { "BOTTOM", 0 } }
@@ -240,7 +242,8 @@ local function smallPieces(frame, layer, ox)
 		for col = 1, 3 do
 			local tex = frame:CreateTexture(nil, layer)
 			tex:SetTexture(UI .. "chamfer")
-			tex:SetTexCoord(ox + SMALL_U[col], ox + SMALL_U[col + 1], 0.5 + SMALL_U[row], 0.5 + SMALL_U[row + 1])
+			local v = (openBottom and row == 3) and 2 or row
+			tex:SetTexCoord(ox + SMALL_U[col], ox + SMALL_U[col + 1], 0.5 + SMALL_U[v], 0.5 + SMALL_U[v + 1])
 			local x1, y1, x2, y2 = xs[col], ys[row], xs[col + 1], ys[row + 1]
 			tex:SetPoint("TOPLEFT", frame, y1[1] .. x1[1], x1[2], y1[2])
 			tex:SetPoint("BOTTOMRIGHT", frame, y2[1] .. x2[1], x2[2], y2[2])
@@ -250,8 +253,11 @@ local function smallPieces(frame, layer, ox)
 	return pieces
 end
 
-function ns.SmallChamfer(frame)
-	return { fill = smallPieces(frame, "BACKGROUND", 0), edge = smallPieces(frame, "BORDER", 0.5) }
+function ns.SmallChamfer(frame, openBottom)
+	return {
+		fill = smallPieces(frame, "BACKGROUND", 0, openBottom),
+		edge = smallPieces(frame, "BORDER", 0.5, openBottom),
+	}
 end
 
 function ns.TintChamfer(ch, fill, edge)

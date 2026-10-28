@@ -333,7 +333,7 @@ function ns.CreateOptions()
 	for _, def in ipairs(PAGES) do
 		local key = def[1]
 		local tab = CreateFrame("Button", nil, body)
-		tab.chamfer = ns.SmallChamfer(tab)
+		tab.chamfer = ns.SmallChamfer(tab, true)
 		tab.text = Text(tab, 13)
 		tab.text:SetPoint("CENTER", 0, 0)
 		tab.text:SetText(def[2])
