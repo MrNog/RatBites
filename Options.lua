@@ -173,13 +173,13 @@ local function GeneralPage(page, db, flag)
 	y = Action(page, y, "Test numbers",
 		function() ns.SetTestLoop(not ns.TestLooping()) end,
 		function() return ns.TestLooping() and "Stop" or "Start" end)
-	y = Choice(page, y, "Your numbers show on",
-		{ { "plates", "Nameplates" }, { "target", "Target only" }, { "screen", "Center screen" }, { "box", "My box" } },
-		flag(db, "anchor"))
-	y = Choice(page, y, "Hits on you show on",
-		{ { "box", "Received box" }, { "floating", "Floating" } },
-		flag(db, "receivedOn"))
 	y = Check(page, y, "Hide the game's own numbers", flag(db, "hideBlizzard"))
+	y = Section(page, y, "Output: what you do")
+	y = Choice(page, y, "Show on",
+		{ { "plates", "Nameplates" }, { "box", "My box" } },
+		flag(db, "anchor"))
+	y = Section(page, y, "Receiving: what lands on you")
+	y = Check(page, y, "Also float over my character", flag(db, "receivedFloat"))
 	y = Section(page, y, "Window")
 	y = Check(page, y, "Minimap button", flag(db, "minimapButton"))
 	y = Check(page, y, "Background art", flag(db, "bgOn"))
@@ -350,46 +350,67 @@ function ns.CreateOptions()
 		lowest = math.min(lowest, def[3](page, db, flag))
 	end
 
-	-- the minimize button left of the X: a gold minus, a plus while minimized
-	local fullHeight, minimized = -lowest + 24, false
-	local MINI_HEIGHT = 36
-	local mini = ns.RedButton(head, "", 20, 20)
-	mini:SetPoint("RIGHT", head.close, "LEFT", -4, 0)
-	local across = mini:CreateTexture(nil, "OVERLAY")
-	across:SetTexture(ns.FLAT); across:SetVertexColor(1, 0.82, 0)
-	across:SetWidth(8); across:SetHeight(2); across:SetPoint("CENTER")
-	local down = mini:CreateTexture(nil, "OVERLAY")
-	down:SetTexture(ns.FLAT); down:SetVertexColor(1, 0.82, 0)
-	down:SetWidth(2); down:SetHeight(8); down:SetPoint("CENTER")
-	down:Hide()
+	-- Minimized, the window folds into its medallion, floating where the medallion was: drag it away,
+	-- click it to open the window again around it. The test and unlocked boxes keep going meanwhile.
+	local MEDAL_X, MEDAL_Y = 10, -8   -- the medallion's centre from the window's top-left corner
+	local dot = CreateFrame("Button", "RatBitesOptionsIcon", UIParent)
+	dot:SetWidth(60); dot:SetHeight(60)
+	dot:SetFrameStrata("DIALOG")
+	dot:SetMovable(true)
+	dot:SetClampedToScreen(true)
+	dot:RegisterForDrag("LeftButton")
+	dot:Hide()
+	local medal = ns.Medallion(dot)
+	medal:ClearAllPoints()
+	medal:SetPoint("CENTER", dot, "CENTER")
+	dot:SetScript("OnDragStart", function(self) self:StartMoving() end)
+	dot:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+	dot:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:AddLine("RatBites")
+		GameTooltip:AddLine("Click: open settings", 1, 1, 1)
+		GameTooltip:AddLine("Drag: move", 1, 1, 1)
+		GameTooltip:Show()
+	end)
+	dot:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-	-- the window keeps its top edge where it is while it shrinks or grows
-	local function SetMinimized(on)
-		minimized = on
+	local folding = false
+	local function Minimize()
 		local left, top = panel:GetLeft(), panel:GetTop()
-		if left and top then
-			panel:ClearAllPoints()
-			panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
-		end
-		ns.CloseDropdowns()
-		if on then body:Hide(); down:Show() else body:Show(); down:Hide() end
-		panel:SetHeight(on and MINI_HEIGHT or fullHeight)
-		for _, fn in ipairs(refreshers) do fn() end
+		dot:ClearAllPoints()
+		dot:SetPoint("CENTER", UIParent, "BOTTOMLEFT", left + MEDAL_X, top + MEDAL_Y)
+		folding = true
+		panel:Hide()
+		folding = false
+		dot:Show()
 	end
-	mini:SetScript("OnClick", function() SetMinimized(not minimized) end)
+	local function Restore()
+		local x, y = dot:GetCenter()
+		dot:Hide()
+		panel:ClearAllPoints()
+		panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x - MEDAL_X, y - MEDAL_Y)
+		panel:Show()
+	end
+	dot:SetScript("OnClick", Restore)
+	ns.RestoreOptions = function()
+		if dot:IsShown() then Restore() return true end
+	end
 
-	panel:SetHeight(fullHeight)
-	refreshers[#refreshers + 1] = function()
-		if minimized then
-			art:Hide(); wash:Hide()
-		else
-			PaintArt(art, wash, panel:GetWidth(), panel:GetHeight())
-		end
-	end
+	-- the minimize button left of the X, the X's size, with a gold minus
+	local mini = ns.RedButton(head, "", head.close:GetWidth(), head.close:GetHeight())
+	mini:SetPoint("RIGHT", head.close, "LEFT", -4, 0)
+	local bar = mini:CreateTexture(nil, "OVERLAY")
+	bar:SetTexture(ns.FLAT); bar:SetVertexColor(1, 0.82, 0)
+	bar:SetWidth(10); bar:SetHeight(3); bar:SetPoint("CENTER")
+	mini:SetScript("OnClick", Minimize)
+
+	panel:SetHeight(-lowest + 24)
+	refreshers[#refreshers + 1] = function() PaintArt(art, wash, panel:GetWidth(), panel:GetHeight()) end
 	Open(pages[db.tab] and db.tab or "general")
 	panel:SetScript("OnShow", function() for _, fn in ipairs(refreshers) do fn() end end)
 	panel:SetScript("OnHide", function()
 		ns.CloseDropdowns()
+		if folding then return end
 		-- boxes left unlocked would keep catching clicks meant for the game
 		ns.SetBoxesUnlocked(false)
 		ns.SetTestLoop(false)
@@ -397,5 +418,6 @@ function ns.CreateOptions()
 end
 
 function ns.OpenOptions()
+	if ns.RestoreOptions() then return end
 	if panel:IsShown() then panel:Hide() else panel:Show() end
 end

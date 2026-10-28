@@ -1,15 +1,14 @@
 local ADDON, ns = ...
 
--- anchor (your damage and heals): "plates" = on the unit's nameplate, "target" = your target only,
--- "screen" = a fixed spot, "box" = My box
--- receivedOn: "box" = Received box, "floating" = rising left of the screen's centre
+-- anchor (output: your damage and heals on others): "plates" = on the unit's nameplate, "box" = My box
+-- what lands on you always goes to the Received box; receivedFloat also floats it over your character
 -- animation: "arc", "rise", "stay", "fountain" or "fall" (Bites.lua's Path)
 -- critStyle: "pop" = starts large and settles, "big" = larger, "plain" = colour only
 -- numbers: "short" = 12.4k, "full" = 12,431, "raw" = 12431
 ns.DEFAULTS = {
 	enabled = true,
 	anchor = "plates",
-	receivedOn = "box",
+	receivedFloat = false,
 	animation = "arc",
 	height = 70,
 	duration = 1.5,
@@ -89,6 +88,9 @@ ns.On("ADDON_LOADED", function(name)
 	RatBitesDB = RatBitesDB or {}
 	copyDefaults(ns.DEFAULTS, RatBitesDB)
 	ns.db = RatBitesDB
+	-- output goes on nameplates or into My box; older choices (target only, centre screen) fold into nameplates
+	if ns.db.anchor ~= "box" then ns.db.anchor = "plates" end
+	ns.db.receivedOn = nil
 end)
 
 ns.On("PLAYER_LOGIN", function()

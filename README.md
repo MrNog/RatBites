@@ -7,7 +7,8 @@ Damage and heal numbers with spell icons, right on each nameplate. For World of 
 - Your heals show in green over the friend you healed, however you cast them (raid frames, mouseover).
   This needs friendly nameplates on; hide their look in your nameplate addon and the numbers still
   show. Heals with no plate rise in a column right of the screen's centre.
-- Or send everything to boxes: My box (what you do) and Received box (what is done to you).
+- What you do shows on nameplates or in My box; what lands on you (your self-heals too) always goes
+  to the Received box, and can also float over your character.
 - Pick what shows: normal or critical hits, auto-attacks, abilities, damage over time, heals, misses,
   pet damage.
 - Optional incoming damage and heals, left of the screen's centre.

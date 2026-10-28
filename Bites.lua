@@ -243,16 +243,16 @@ root:SetScript("OnUpdate", function()
 	end
 end)
 
--- where floating numbers go without a plate: above the screen's centre, your heals right of it and
--- what is done to you left of it
+-- where floating numbers go without a plate: above the screen's centre, your heals right of it, and
+-- what lands on you over your character, whom the camera keeps at the screen's centre
 local function ScreenSpot()
 	return UIParent:GetWidth() / 2, UIParent:GetHeight() / 2 + 140
 end
 local function HealSpot()
 	return UIParent:GetWidth() / 2 + 160, UIParent:GetHeight() / 2 - 40
 end
-local function ReceivedSpot()
-	return UIParent:GetWidth() / 2 - 160, UIParent:GetHeight() / 2 - 40
+local function MeSpot()
+	return UIParent:GetWidth() / 2, UIParent:GetHeight() / 2 + 40
 end
 
 --------------------------------------------------------------------------------
@@ -346,9 +346,8 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 	if amount then
 		if amount <= 0 or not show[crit and "crit" or "normal"] then return end
 	end
-	local into = db.anchor
 	local label, color, size, pop = Style(who, kind, amount, crit, miss)
-	if into == "box" then
+	if db.anchor == "box" then
 		ns.BoxAdd("mine", label, color, size, icon)
 		return
 	end
@@ -356,20 +355,14 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 	-- Damage and heals go to the same place: the unit's nameplate (an invisible friendly plate still
 	-- counts). Without one, your target's damage goes above the screen's centre, and heals rise in
 	-- their own column right of it, so none is lost.
-	local heal = HEALING[kind]
-	local isTarget = UnitExists("target") and UnitGUID("target") == guid
-	if into == "target" and not isTarget then return end
-	local plate
-	if into ~= "screen" then
-		plate = ns.PlateFor(guid, name)
-		ns.lastDest, ns.lastDestPlate = name, plate
-	end
+	local plate = ns.PlateFor(guid, name)
+	ns.lastDest, ns.lastDestPlate = name, plate
 	if plate then
 		Show(plate, name, 0, 0, label, color, size, icon, pop)
-	elseif heal then
+	elseif HEALING[kind] then
 		local x, y = HealSpot()
 		Show(nil, nil, x, y, label, color, size, icon, pop, true)
-	elseif into == "screen" or isTarget then
+	elseif UnitExists("target") and UnitGUID("target") == guid then
 		local x, y = ScreenSpot()
 		Show(nil, nil, x, y, label, color, size, icon, pop)
 	end
@@ -377,20 +370,26 @@ end
 
 local function Received(kind, amount, crit, icon)
 	local db, inc = ns.db, ns.db.incoming
-	if kind == "miss" or kind == "overheal" or kind == "shield" or not amount or amount <= 0 then return end
-	if kind == "heal" then
+	if kind == "miss" then return end
+	if HEALING[kind] then
 		if not inc.heals then return end
 	elseif not inc.damage then
 		return
 	end
-	local heal = kind == "heal"
-	local label = (heal and "+" or "-") .. Abbrev(amount)
-	local color = heal and COLOR.heal or COLOR.taken
-	local size = crit and SIZE * 1.2 or SIZE * 0.9
-	if db.receivedOn == "box" then
-		ns.BoxAdd("received", label, color, size, icon)
+	local label, color
+	if kind == "shield" then
+		label, color = "Shield", COLOR.shield
+	elseif not amount or amount <= 0 then
+		return
+	elseif kind == "heal" or kind == "overheal" then
+		label, color = "+" .. Abbrev(amount), kind == "heal" and COLOR.heal or COLOR.overheal
 	else
-		local x, y = ReceivedSpot()
+		label, color = "-" .. Abbrev(amount), COLOR.taken
+	end
+	local size = crit and SIZE * 1.2 or SIZE * 0.9
+	ns.BoxAdd("received", label, color, size, icon)
+	if db.receivedFloat then
+		local x, y = MeSpot()
 		Show(nil, nil, x, y, label, color, size, icon, crit and db.critStyle == "pop", true)
 	end
 end
@@ -403,9 +402,9 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	if not who and not toMe then return end
 	local kind, amount, crit, icon, miss = Read(event, ...)
 	if not kind then return end
-	-- your heals on yourself are your heals: they go on your own raid frame like anyone else's
-	local ownHeal = who and HEALING[kind]
-	if toMe and not ownHeal then
+	-- output is what you do to others; receiving is everything that lands on you, your own
+	-- self-heals and shields included
+	if toMe then
 		Received(kind, amount, crit, icon)
 	else
 		Outgoing(who, destGUID, destName, kind, amount, crit, icon, miss)
@@ -453,7 +452,7 @@ function ns.Test()
 	local function pick() return book[math.random(math.max(#book, 1))] or ATTACK_ICON end
 	local db = ns.db
 	local guid, name = UnitGUID("target"), UnitName("target")
-	local plate = guid and db.anchor ~= "screen" and ns.PlateFor(guid, name)
+	local plate = guid and ns.PlateFor(guid, name)
 	local x, y = ScreenSpot()
 	-- label, colour, size, pop
 	local hits = {
@@ -475,11 +474,10 @@ function ns.Test()
 	end
 	for i, r in ipairs({ { "-" .. Abbrev(640), COLOR.taken }, { "+" .. Abbrev(1923), COLOR.heal } }) do
 		table.insert(queued, { at = GetTime() + 0.4 + (i - 1) * 0.25, fn = function()
-			if db.receivedOn == "box" then
-				ns.BoxAdd("received", r[1], r[2], SIZE * 0.9, ATTACK_ICON)
-			else
-				local rx, ry = ReceivedSpot()
-				Show(nil, nil, rx, ry, r[1], r[2], SIZE * 0.9, ATTACK_ICON, false, true)
+			ns.BoxAdd("received", r[1], r[2], SIZE * 0.9, ATTACK_ICON)
+			if db.receivedFloat then
+				local mx, my = MeSpot()
+				Show(nil, nil, mx, my, r[1], r[2], SIZE * 0.9, ATTACK_ICON, false, true)
 			end
 		end })
 	end
