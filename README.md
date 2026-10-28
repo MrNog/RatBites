@@ -16,10 +16,6 @@
 
 ---
 
-<p align="center">
-  <img src="docs/images/plates.png" alt="Damage numbers with spell icons over the enemies' nameplates" width="100%">
-</p>
-
 ## What you see
 
 - **Output, what you do:** every hit and heal rises over its target's nameplate with the spell's icon,
@@ -29,10 +25,6 @@
   **Received box**, and can also float over your character.
 - **Colours that tell you what happened:** grey hits, gold big hits, orange crits, green heals, mint
   heal crits, dim overheal, blue shields, red damage taken. Crits get a thick outline and bigger text.
-
-<p align="center">
-  <img src="docs/images/boxes.png" alt="My box and Received box, xCT style" width="100%">
-</p>
 
 ## Features
 
