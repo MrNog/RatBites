@@ -198,7 +198,7 @@ end
 -- On a plate the spot is kept up to date while the plate still shows the same name, so a plate that
 -- goes away mid-flight leaves the text where it was.
 local START_GAP = 12  -- how far above the plate a number starts
-local DOT_LINGER = 3.5  -- sec a DoT's number stays on its plate after a tick
+local DOT_LINGER = 4  -- sec a DoT's number stays on its plate after a tick
 
 -- What a number starts above: the plate, or with ElvUI's plates the row of your debuffs on it, so
 -- the number doesn't sit on top of the icons.
@@ -207,8 +207,12 @@ local function PlateTop(plate)
 	if debuffs and debuffs:IsShown() and debuffs[1] and debuffs[1]:IsShown() then return debuffs end
 	return plate
 end
+-- A number travels its path over its move time and fades over the end of it; a DoT's number then
+-- holds at the path's end until its longer time runs out (or the next tick starts it over).
 local function Move(t, elapsed)
-	local p = elapsed / t.duration
+	local p = math.min(1, elapsed / t.moveTime)
+	local fadeLen = t.moveTime * (1 - FADE_AT)
+	local left = t.duration - elapsed
 	local textScale = ns.db.scale
 	local scale = textScale
 	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
@@ -229,7 +233,7 @@ local function Move(t, elapsed)
 		t.plate = nil
 		t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x / scale + dx, t.y / scale + dy)
 	end
-	t:SetAlpha(p > FADE_AT and 1 - (p - FADE_AT) / (1 - FADE_AT) or 1)
+	t:SetAlpha(left < fadeLen and left / fadeLen or 1)
 end
 
 -- plate: the nameplate to ride (nil: the spot x, y in UIParent units); column: a fixed spot's
@@ -268,7 +272,7 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, ti
 	ns.lastShown = t
 	t.straight = column
 	t.anim = column and "rise" or db.animation
-	t.pop, t.rise, t.duration = pop, db.height, db.duration
+	t.pop, t.rise, t.duration, t.moveTime = pop, db.height, db.duration, db.duration
 	-- a DoT's number outlives the gap to its next tick (most tick every 3 sec), so the ticks join it
 	if tick and plate then t.duration = math.max(db.duration, DOT_LINGER) end
 	t.line = StackLine(plate or format("%d:%d", x, y), size)
