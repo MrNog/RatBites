@@ -222,6 +222,8 @@ local function Move(t, elapsed)
 	if t.pop and since < POP_TIME then scale = scale * (1 + 0.5 * (1 - since / POP_TIME)) end
 	t:SetScale(scale)
 	local dx, dy = Path(t, p)
+	-- a DoT's slot keeps its side whatever the animation (Rise, Stay and Fall don't drift sideways)
+	if t.slot then dx = t.dx * p end
 	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
 	dx, dy = dx / scale, dy / scale
 	t:ClearAllPoints()
