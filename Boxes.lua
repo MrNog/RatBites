@@ -137,18 +137,19 @@ function ns.BoxAdd(key, label, color, size, icon)
 	local box = boxes[key]
 	if not box then return end
 	local db = ns.db
-	-- The same number from the same spell landing together (a glyph's five splashes) joins the line
-	-- before it as "x5", so a burst can't push the heal that caused it out of the box.
+	-- The same spell landing again right away in the same colour (a glyph's five splashes, a point or
+	-- two apart) joins the line before it as "x5", keeping that line's number, so a burst can't push
+	-- the heal that caused it out of the box.
 	local last = box.lines[1]
-	if last and last.label == label and last.iconPath == icon and GetTime() - last.at < MERGE_TIME then
+	if last and icon and last.iconPath == icon and last.color == color and GetTime() - last.at < MERGE_TIME then
 		last.count = last.count + 1
-		last.text:SetText(label .. " x" .. last.count)
+		last.text:SetText(last.label .. " x" .. last.count)
 		last.at = GetTime()
 		last:SetAlpha(1)
 		return
 	end
 	local line = table.remove(box.pool) or NewLine(box)
-	line.label, line.iconPath, line.count = label, icon, 1
+	line.label, line.iconPath, line.color, line.count = label, icon, color, 1
 	size = size * db.scale
 	line.text:SetFont(ns.FontPath(), size, "OUTLINE")
 	line.text:SetText(label)
