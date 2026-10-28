@@ -13,7 +13,7 @@ ns.DEFAULTS = {
 	height = 70,
 	duration = 1.5,
 	boxScroll = "up",
-	boxAlign = "center",
+	boxAlign = "left",
 	boxTime = 5,
 	boxes = {
 		mine = { x = 300, y = -60, w = 200, h = 220 },
