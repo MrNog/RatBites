@@ -36,7 +36,7 @@ ns.DEFAULTS = {
 	classColorFor = "off",  -- "normal" = your normal damage, "crit" = your crits; the other keeps its colour
 	bigGold = true,
 	critStyle = "pop",
-	critSize = 2.7,  -- a crit (Pop or Bigger) against a normal hit
+	critSize = 5,  -- a crit (Pop or Bigger) against a normal hit
 	spread = "normal",
 	numbers = "short",
 	show = { normal = true, crit = true, swing = true, spell = true, dot = true, miss = true, pet = true,
@@ -169,6 +169,11 @@ end
 -- crits keep standing out).
 local function Upgrade(db)
 	UpgradeRoute(db)
+	-- crits went from 2.7x to 5x by default: a profile still on the old default follows, once
+	if not db.critSizeSet then
+		if db.critSize == 2.7 then db.critSize = 5 end
+		db.critSizeSet = true
+	end
 	for _, key in ipairs({ "mine", "received" }) do
 		local b = db.boxes[key]
 		if db.boxScroll then b.scroll = db.boxScroll end
