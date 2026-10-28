@@ -82,6 +82,24 @@ root:SetFrameStrata("LOW")
 local pool, active, queued = {}, {}, {}
 local arc = 1
 
+-- Numbers that land on the same spot together (a heal and its proc, a multi-hit) would start on top
+-- of each other, so each one within STACK_TIME of the last starts a line higher, up to STACK_MAX.
+local STACK_TIME, STACK_MAX = 0.35, 4
+local stacks = {}  -- plate or spot -> { at = time of the last number, n = its line }
+
+local function StackLine(key, size)
+	local now = GetTime()
+	local s = stacks[key]
+	if s and now - s.at < STACK_TIME then
+		s.n = (s.n + 1) % STACK_MAX
+	else
+		s = { n = 0 }
+		stacks[key] = s
+	end
+	s.at = now
+	return s.n * (size + 4)
+end
+
 local function Acquire()
 	local t = table.remove(pool)
 	if t then return t end
@@ -118,7 +136,7 @@ local function Move(t, elapsed)
 	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.8 * (1 - elapsed / POP_TIME)) end
 	t:SetScale(scale)
 	local dx = t.dx * p
-	local dy = (t.straight and 0 or 20) + 70 * p - 20 * p * p
+	local dy = (t.straight and 0 or 20) + t.line + 70 * p - 20 * p * p
 	t:ClearAllPoints()
 	if t.plate and ns.PlateShows(t.plate, t.name) then
 		t:SetPoint("CENTER", t.plate, "TOP", dx, dy)
@@ -150,6 +168,7 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, straight)
 	end
 	t.plate, t.name, t.x, t.y = plate, name, x, y
 	t.pop, t.straight = pop, straight
+	t.line = StackLine(plate or (straight and "incoming" or "screen"), size)
 	if straight then
 		t.dx = 0
 	else
