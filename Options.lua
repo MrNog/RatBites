@@ -288,25 +288,15 @@ end
 
 -- Profiles live in Core.lua; this page picks this character's, and one per talent spec when dual
 -- spec switching is on.
--- a talent group's name: its tree with the most points (Holy, Retribution ...), else Primary / Secondary
-local function SpecName(group)
-	local best, most = nil, 0
-	for tab = 1, GetNumTalentTabs() do
-		local name, _, points = GetTalentTabInfo(tab, false, false, group)
-		if points and points > most then best, most = name, points end
-	end
-	return best or (group == 1 and "Primary" or "Secondary")
-end
-
 local function ProfilesPage(page)
 	local names = {}
 	for _, name in ipairs(ns.PROFILES) do names[#names + 1] = { name, name } end
 	local copyFrom = { { "none", "Choose a profile" } }
 	for _, pair in ipairs(names) do copyFrom[#copyFrom + 1] = pair end
 
-	-- Which profile: one choice, or with talent switching one per spec, named after the spec
-	-- (its tree with the most points) and marked while it is the one in use. Both kinds of row sit
-	-- in the same place; only the ones that apply show.
+	-- Which profile: one choice, or with talent switching one for the primary and one for the
+	-- secondary spec, marked while it is the one in use. Both kinds of row sit in the same place;
+	-- only the ones that apply show.
 	local y = Section(page, TOP, "Which profile", true)
 	y = Check(page, y, "Switch profile with my talents",
 		function() return ns.char.dual end,
@@ -326,7 +316,7 @@ local function ProfilesPage(page)
 		local now = GetActiveTalentGroup() or 1
 		for spec, row in ipairs(specRows) do
 			if dual then row:Show() else row:Hide() end
-			local label = SpecName(spec) .. " talents use"
+			local label = spec == 1 and "Primary spec" or "Secondary spec"
 			if spec == now then label = label .. "  |cffffd100· now|r" end
 			row.label:SetText(label)
 		end
