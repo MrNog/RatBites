@@ -283,6 +283,16 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, ti
 		local s = SPREAD[db.spread] or SPREAD.normal
 		t.dx = arc * (s[1] + math.random() * s[2])
 	end
+	-- DoT numbers on one plate hold at the end of their path for seconds, so each one already there
+	-- puts the next a line higher and on the other side, or they would end on the same spot
+	if tick and plate then
+		local n = 0
+		for _, o in ipairs(active) do
+			if o.tick and o.plate == plate then n = n + 1 end
+		end
+		t.line = n * (size + 6)
+		t.dx = (n % 2 == 0 and -1 or 1) * math.abs(t.dx)
+	end
 	t.start = GetTime()
 	t:Show()
 	table.insert(active, t)
