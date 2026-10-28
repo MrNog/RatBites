@@ -252,6 +252,14 @@ function ns.RelayoutBoxes()
 	for _, box in pairs(boxes) do Layout(box) end
 end
 
+-- after the profile changes: each box to that profile's spot and size, its lines laid out again
+function ns.PlaceBoxes()
+	for _, box in pairs(boxes) do
+		Place(box)
+		Layout(box)
+	end
+end
+
 ns.On("PLAYER_LOGIN", function()
 	boxes.mine = Create("mine")
 	boxes.received = Create("received")

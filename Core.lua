@@ -1,6 +1,8 @@
 local ADDON, ns = ...
 
--- anchor (output: your damage and heals on others): "plates" = on the unit's nameplate, "box" = My box
+-- One profile's settings. ns.db is the active profile.
+-- anchor (output: your damage and heals on others): "plates" = on the unit's nameplate, "box" = My box,
+-- "healsplates" = heals on plates and damage in My box, "dmgplates" = the other way round
 -- what lands on you always goes to the Received box; receivedFloat also floats it over your character
 -- animation: "arc", "rise", "stay", "fountain" or "fall" (Bites.lua's Path)
 -- critStyle: "pop" = starts large and settles, "big" = larger, "plain" = colour only
@@ -9,8 +11,8 @@ ns.DEFAULTS = {
 	enabled = true,
 	anchor = "plates",
 	receivedFloat = false,
-	noPlateHeals = "box",
-	healShields = "join",  -- shields your heals make (Val'anyr, Divine Aegis): "join" the heal, "line" of their own, "hide"  -- your heals on someone with no plate on screen: "box", "column" or "hide"
+	noPlateHeals = "box",  -- your heals on someone with no plate on screen: "box", "column" or "hide"
+	healShields = "join",  -- shields your heals make (Val'anyr, Divine Aegis): "join" the heal, "line" of their own, "hide"
 	animation = "arc",
 	height = 70,
 	duration = 1.5,
@@ -39,6 +41,9 @@ ns.DEFAULTS = {
 	minimapAngle = 220,
 }
 
+-- The profiles every account has; a profile is made from the defaults the first time it is used.
+ns.PROFILES = { "Default", "Healer", "DPS", "Tank" }
+
 local function copyDefaults(src, dst)
 	for k, v in pairs(src) do
 		if type(v) == "table" then
@@ -48,6 +53,12 @@ local function copyDefaults(src, dst)
 			dst[k] = v
 		end
 	end
+end
+
+local function deepCopy(t)
+	local c = {}
+	for k, v in pairs(t) do c[k] = type(v) == "table" and deepCopy(v) or v end
+	return c
 end
 
 function ns.Print(msg)
@@ -69,34 +80,31 @@ function ns.On(event, fn)
 end
 
 -- The game's own numbers over the mobs you hit. While RatBites draws them, the game's are turned off;
--- the values they had are kept and put back when RatBites stops.
+-- the values they had are kept (account-wide: they are the game's settings) and put back when
+-- RatBites stops.
 local BLIZZARD_CVARS = { "CombatDamage", "PetMeleeDamage", "CombatHealing" }
 
 function ns.ApplyBlizzardText()
-	local db = ns.db
+	local db, root = ns.db, RatBitesDB
 	if db.enabled and db.hideBlizzard then
-		if not db.blizzSaved then
-			db.blizzSaved = {}
-			for _, cvar in ipairs(BLIZZARD_CVARS) do db.blizzSaved[cvar] = GetCVar(cvar) end
+		if not root.blizzSaved then
+			root.blizzSaved = {}
+			for _, cvar in ipairs(BLIZZARD_CVARS) do root.blizzSaved[cvar] = GetCVar(cvar) end
 		end
 		for _, cvar in ipairs(BLIZZARD_CVARS) do SetCVar(cvar, "0") end
-	elseif db.blizzSaved then
-		for cvar, value in pairs(db.blizzSaved) do SetCVar(cvar, value) end
-		db.blizzSaved = nil
+	elseif root.blizzSaved then
+		for cvar, value in pairs(root.blizzSaved) do SetCVar(cvar, value) end
+		root.blizzSaved = nil
 	end
 end
 
-ns.On("ADDON_LOADED", function(name)
-	if name ~= ADDON then return end
-	RatBitesDB = RatBitesDB or {}
-	copyDefaults(ns.DEFAULTS, RatBitesDB)
-	ns.db = RatBitesDB
-	-- output goes on nameplates or into My box; older choices (target only, centre screen) fold into nameplates
+-- Older settings, read into a profile: output on nameplates or in My box (target only and centre
+-- screen fold into nameplates); box settings once shared by both boxes; class colour once two
+-- checkboxes (normal hits win when both were on, so crits keep standing out).
+local function Upgrade(db)
 	local anchors = { plates = true, box = true, healsplates = true, dmgplates = true }
-	if not anchors[ns.db.anchor] then ns.db.anchor = "plates" end
-	ns.db.receivedOn = nil
-	-- box settings used to be shared by both boxes: each box starts from the shared choice
-	local db = ns.db
+	if not anchors[db.anchor] then db.anchor = "plates" end
+	db.receivedOn = nil
 	for _, key in ipairs({ "mine", "received" }) do
 		local b = db.boxes[key]
 		if db.boxScroll then b.scroll = db.boxScroll end
@@ -105,19 +113,100 @@ ns.On("ADDON_LOADED", function(name)
 		if db.boxMerge and key == "mine" then b.merge = db.boxMerge end
 	end
 	db.boxScroll, db.boxAlign, db.boxTime, db.boxMerge = nil, nil, nil, nil
-	-- class colour was two checkboxes; normal hits win when both were on, so crits keep standing out
 	if db.classColor then
 		db.classColorFor = "normal"
 	elseif db.classCrit then
 		db.classColorFor = "crit"
 	end
 	db.classColor, db.classCrit = nil, nil
+end
+
+--------------------------------------------------------------------------------
+-- profiles: shared by the account; each character picks one, or one per talent spec
+--------------------------------------------------------------------------------
+
+local function Profile(name)
+	local profiles = RatBitesDB.profiles
+	profiles[name] = profiles[name] or {}
+	copyDefaults(ns.DEFAULTS, profiles[name])
+	Upgrade(profiles[name])
+	return profiles[name]
+end
+
+-- the profile this character uses now: its spec's one with dual spec on, else its own choice
+function ns.ActiveProfile()
+	local char = ns.char
+	if char.dual then return char.spec[GetActiveTalentGroup() or 1] end
+	return char.profile
+end
+
+-- every part of RatBites that shows a setting looks at it again
+function ns.ProfileChanged()
+	if ns.RefreshOptions then ns.RefreshOptions() end
+	ns.ApplyBlizzardText()
+	if ns.PlaceBoxes then ns.PlaceBoxes() end
+	if ns.UpdateMinimapButton then ns.UpdateMinimapButton() end
+	if ns.RefreshLegend then ns.RefreshLegend() end
+end
+
+function ns.UseProfile()
+	local name = ns.ActiveProfile()
+	if ns.db == RatBitesDB.profiles[name] then return end
+	ns.db = Profile(name)
+	ns.ProfileChanged()
+end
+
+-- the active profile's setting for this character (with dual spec on, for the spec in use)
+function ns.SetProfile(name)
+	local char = ns.char
+	if char.dual then char.spec[GetActiveTalentGroup() or 1] = name else char.profile = name end
+	ns.UseProfile()
+end
+
+function ns.CopyProfile(from)
+	local name = ns.ActiveProfile()
+	if from == name then return end
+	RatBitesDB.profiles[name] = deepCopy(Profile(from))
+	ns.db = nil
+	ns.UseProfile()
+end
+
+function ns.ResetProfile()
+	RatBitesDB.profiles[ns.ActiveProfile()] = nil
+	ns.db = nil
+	ns.UseProfile()
+end
+
+ns.On("ADDON_LOADED", function(name)
+	if name ~= ADDON then return end
+	RatBitesDB = RatBitesDB or {}
+	local root = RatBitesDB
+	-- settings from before profiles become the Default profile
+	if not root.profiles then
+		local old = {}
+		for k, v in pairs(root) do
+			if k ~= "blizzSaved" then old[k] = v; root[k] = nil end
+		end
+		root.profiles = { Default = old }
+	end
+	root.chars = root.chars or {}
+	local key = UnitName("player") .. " - " .. GetRealmName()
+	root.chars[key] = root.chars[key] or {}
+	ns.char = root.chars[key]
+	copyDefaults({ profile = "Default", dual = false, spec = { "Default", "Default" } }, ns.char)
+	ns.db = Profile(ns.ActiveProfile())
 end)
 
 ns.On("PLAYER_LOGIN", function()
 	ns.playerGUID = UnitGUID("player")
+	-- the spec is known by now: with dual spec on, its profile may differ from the one loaded
+	ns.UseProfile()
 	ns.ApplyBlizzardText()
 	ns.CreateOptions()
+end)
+
+ns.On("ACTIVE_TALENT_GROUP_CHANGED", function()
+	if ns.char.dual then ns.UseProfile() end
 end)
 
 -- /rb is the game's Raid Browser

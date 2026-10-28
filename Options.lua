@@ -135,6 +135,19 @@ local function Action(parent, y, text, onClick, label)
 	return y - ROW_H
 end
 
+-- a setting by its path in the active profile ("show", "heal"): a getter and a setter that read
+-- ns.db on every call, so they follow a profile switch
+local function flag(...)
+	local path = { ... }
+	local last = table.remove(path)
+	local function holder()
+		local t = ns.db
+		for _, k in ipairs(path) do t = t[k] end
+		return t
+	end
+	return function() return holder()[last] end, function(v) holder()[last] = v end
+end
+
 local function Percent(v) return format("%d%%", v * 100 + 0.5) end
 
 -- The training-yard picture behind the settings, as RatStash's behind its windows. Its subject sits in
@@ -168,106 +181,130 @@ end
 -- the pages
 --------------------------------------------------------------------------------
 
-local function GeneralPage(page, db, flag)
+local function GeneralPage(page)
 	local y = Section(page, TOP, "Numbers", true)
-	y = Check(page, y, "Enabled", flag(db, "enabled"))
+	y = Check(page, y, "Enabled", flag("enabled"))
 	y = Action(page, y, "Test numbers",
 		function() ns.SetTestLoop(not ns.TestLooping()) end,
 		function() return ns.TestLooping() and "Stop" or "Start" end)
-	y = Check(page, y, "Hide the game's own numbers", flag(db, "hideBlizzard"))
+	y = Check(page, y, "Hide the game's own numbers", flag("hideBlizzard"))
 	y = Section(page, y, "Output: what you do")
 	y = Choice(page, y, "Show on",
 		{ { "plates", "Nameplates" }, { "box", "My box" },
 			{ "healsplates", "Heals plates, dmg box" }, { "dmgplates", "Dmg plates, heals box" } },
-		flag(db, "anchor"))
+		flag("anchor"))
 	y = Choice(page, y, "Heals with no nameplate",
 		{ { "box", "My box" }, { "column", "Column" }, { "hide", "Hide" } },
-		flag(db, "noPlateHeals"))
+		flag("noPlateHeals"))
 	y = Section(page, y, "Receiving: what lands on you")
-	y = Check(page, y, "Also float over my character", flag(db, "receivedFloat"))
+	y = Check(page, y, "Also float over my character", flag("receivedFloat"))
 	y = Section(page, y, "Window")
-	y = Check(page, y, "Minimap button", flag(db, "minimapButton"))
-	y = Check(page, y, "Background art", flag(db, "bgOn"))
-	y = Stepper(page, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end, flag(db, "bgArt"))
+	y = Check(page, y, "Minimap button", flag("minimapButton"))
+	y = Check(page, y, "Background art", flag("bgOn"))
+	y = Stepper(page, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end, flag("bgArt"))
 	return y
 end
 
-local function LookPage(page, db, flag)
+local function LookPage(page)
 	local y = Section(page, TOP, "Text", true)
-	y = Choice(page, y, "Font", ns.FontList(), flag(db, "font"))
-	y = Stepper(page, y, "Text size", 0.5, 2, 0.1, Percent, flag(db, "scale"))
+	y = Choice(page, y, "Font", ns.FontList(), flag("font"))
+	y = Stepper(page, y, "Text size", 0.5, 2, 0.1, Percent, flag("scale"))
 	y = Choice(page, y, "Number format",
 		{ { "short", "12.4k" }, { "full", "12,431" }, { "raw", "12431" } },
-		flag(db, "numbers"))
+		flag("numbers"))
 	y = Section(page, y, "Icons")
-	y = Check(page, y, "Spell icons", flag(db, "icons"))
-	y = Stepper(page, y, "Icon size", 0.5, 2, 0.1, Percent, flag(db, "iconScale"))
+	y = Check(page, y, "Spell icons", flag("icons"))
+	y = Stepper(page, y, "Icon size", 0.5, 2, 0.1, Percent, flag("iconScale"))
 	y = Section(page, y, "Colors")
 	y = Action(page, y, "Color examples",
 		function() ns.ToggleLegend() end,
 		function() return "Show (/bites colors)" end)
 	y = Choice(page, y, "Critical hits",
 		{ { "pop", "Pop" }, { "big", "Bigger" }, { "plain", "Plain" } },
-		flag(db, "critStyle"))
-	y = Check(page, y, "Big hits in gold", flag(db, "bigGold"))
+		flag("critStyle"))
+	y = Check(page, y, "Big hits in gold", flag("bigGold"))
 	y = Choice(page, y, "My class color for",
 		{ { "off", "Off" }, { "normal", "Normal hits" }, { "crit", "Crits" } },
-		flag(db, "classColorFor"))
+		flag("classColorFor"))
 	return y
 end
 
-local function MotionPage(page, db, flag)
+local function MotionPage(page)
 	local y = Section(page, TOP, "Floating numbers", true)
 	y = Choice(page, y, "Animation",
 		{ { "arc", "Arc" }, { "rise", "Rise" }, { "stay", "Stay" }, { "fountain", "Fountain" }, { "fall", "Fall" } },
-		flag(db, "animation"))
+		flag("animation"))
 	y = Choice(page, y, "Sideways drift",
 		{ { "none", "None" }, { "tight", "Tight" }, { "normal", "Normal" }, { "wide", "Wide" } },
-		flag(db, "spread"))
-	y = Stepper(page, y, "Travel distance", 20, 150, 10, function(v) return format("%d", v) end, flag(db, "height"))
-	y = Stepper(page, y, "Time on screen", 0.8, 4, 0.1, function(v) return format("%.1fs", v) end, flag(db, "duration"))
+		flag("spread"))
+	y = Stepper(page, y, "Travel distance", 20, 150, 10, function(v) return format("%d", v) end, flag("height"))
+	y = Stepper(page, y, "Time on screen", 0.8, 4, 0.1, function(v) return format("%.1fs", v) end, flag("duration"))
 	return y
 end
 
-local function ShowPage(page, db, flag)
-	local show, inc = db.show, db.incoming
+local function ShowPage(page)
 	local y = Section(page, TOP, "What you do", true)
-	y = Check(page, y, "Normal hits", flag(show, "normal"))
-	y = Check(page, y, "Critical hits", flag(show, "crit"))
-	y = Check(page, y, "Auto-attacks", flag(show, "swing"))
-	y = Check(page, y, "Spells and abilities", flag(show, "spell"))
-	y = Check(page, y, "Damage over time", flag(show, "dot"))
-	y = Check(page, y, "Heals and shields", flag(show, "heal"))
+	y = Check(page, y, "Normal hits", flag("show", "normal"))
+	y = Check(page, y, "Critical hits", flag("show", "crit"))
+	y = Check(page, y, "Auto-attacks", flag("show", "swing"))
+	y = Check(page, y, "Spells and abilities", flag("show", "spell"))
+	y = Check(page, y, "Damage over time", flag("show", "dot"))
+	y = Check(page, y, "Heals and shields", flag("show", "heal"))
 	y = Choice(page, y, "Shields from heals",
 		{ { "join", "Join the heal" }, { "line", "Own line" }, { "hide", "Hide" } },
-		flag(db, "healShields"))
-	y = Check(page, y, "Misses (dodge, parry ...)", flag(show, "miss"))
-	y = Check(page, y, "Pet damage", flag(show, "pet"))
+		flag("healShields"))
+	y = Check(page, y, "Misses (dodge, parry ...)", flag("show", "miss"))
+	y = Check(page, y, "Pet damage", flag("show", "pet"))
 	y = Section(page, y, "What is done to you")
-	y = Check(page, y, "Damage taken", flag(inc, "damage"))
-	y = Check(page, y, "Heals received", flag(inc, "heals"))
+	y = Check(page, y, "Damage taken", flag("incoming", "damage"))
+	y = Check(page, y, "Heals received", flag("incoming", "heals"))
 	return y
 end
 
-local function BoxesPage(page, db, flag)
+local function BoxesPage(page)
 	local y = Section(page, TOP, "Both boxes", true)
 	y = Action(page, y, "Move and resize boxes",
 		function() ns.SetBoxesUnlocked(not ns.BoxesUnlocked()) end,
 		function() return ns.BoxesUnlocked() and "Lock" or "Unlock" end)
 	-- the same four rows for each box, on its own settings
 	for _, def in ipairs({ { "mine", "My box: what you do" }, { "received", "Received box: what lands on you" } }) do
-		local box = db.boxes[def[1]]
 		y = Section(page, y, def[2])
 		y = Choice(page, y, "New lines come in at",
 			{ { "up", "The bottom" }, { "down", "The top" } },
-			flag(box, "scroll"))
+			flag("boxes", def[1], "scroll"))
 		y = Choice(page, y, "Text alignment",
 			{ { "left", "Left" }, { "center", "Center" }, { "right", "Right" } },
-			flag(box, "align"))
+			flag("boxes", def[1], "align"))
 		y = Choice(page, y, "Merge repeats within",
 			{ { 0, "Off" }, { 0.5, "0.5 sec" }, { 1, "1 sec" }, { 2, "2 sec" }, { 3, "3 sec" } },
-			flag(box, "merge"))
-		y = Stepper(page, y, "Each line stays", 2, 10, 1, function(v) return format("%ds", v) end, flag(box, "time"))
+			flag("boxes", def[1], "merge"))
+		y = Stepper(page, y, "Each line stays", 2, 10, 1, function(v) return format("%ds", v) end, flag("boxes", def[1], "time"))
+	end
+	return y
+end
+
+-- Profiles live in Core.lua; this page picks this character's, and one per talent spec when dual
+-- spec switching is on.
+local function ProfilesPage(page)
+	local names = {}
+	for _, name in ipairs(ns.PROFILES) do names[#names + 1] = { name, name } end
+	local copyFrom = { { "none", "Choose a profile" } }
+	for _, pair in ipairs(names) do copyFrom[#copyFrom + 1] = pair end
+
+	local y = Section(page, TOP, "Profile", true)
+	y = Choice(page, y, "Active profile", names, ns.ActiveProfile, ns.SetProfile)
+	y = Choice(page, y, "Copy settings from", copyFrom,
+		function() return "none" end,
+		function(v) if v ~= "none" then ns.CopyProfile(v) end end)
+	y = Action(page, y, "Reset this profile", ns.ResetProfile, function() return "Reset" end)
+	y = Section(page, y, "Talent specs")
+	y = Check(page, y, "Switch profile with my talents",
+		function() return ns.char.dual end,
+		function(v) ns.char.dual = v; ns.UseProfile() end)
+	for spec, label in ipairs({ "Primary talents use", "Secondary talents use" }) do
+		y = Choice(page, y, label, names,
+			function() return ns.char.spec[spec] end,
+			function(v) ns.char.spec[spec] = v; ns.UseProfile() end)
 	end
 	return y
 end
@@ -278,7 +315,13 @@ local PAGES = {
 	{ "motion", "Motion", MotionPage },
 	{ "show", "Show", ShowPage },
 	{ "boxes", "Boxes", BoxesPage },
+	{ "profiles", "Profiles", ProfilesPage },
 }
+
+-- every row shows the active profile's value again (after a profile switch)
+function ns.RefreshOptions()
+	for _, fn in ipairs(refreshers) do fn() end
+end
 
 --------------------------------------------------------------------------------
 -- tabs: small cut-corner plates standing on the hairline under them; the open one takes the window's
@@ -300,7 +343,6 @@ end
 
 function ns.CreateOptions()
 	C, rgb = ns.C, ns.rgb
-	local db = ns.db
 	panel = CreateFrame("Frame", "RatBitesOptions", UIParent)
 	panel:Hide()
 	panel:SetWidth(WIDTH)
@@ -330,9 +372,6 @@ function ns.CreateOptions()
 	local body = CreateFrame("Frame", nil, panel)
 	body:SetAllPoints(panel)
 
-	local function flag(t, key)
-		return function() return t[key] end, function(v) t[key] = v end
-	end
 
 	-- the tabs and the gold hairline they stand on
 	local line = body:CreateTexture(nil, "ARTWORK")
@@ -343,7 +382,7 @@ function ns.CreateOptions()
 	line:SetPoint("TOPRIGHT", -ns.INSET, TAB_Y - TAB_H)
 	local tabs, pages, lowest = {}, {}, 0
 	local function Open(key)
-		db.tab = key
+		ns.char.tab = key
 		ns.CloseDropdowns()
 		for k, page in pairs(pages) do
 			if k == key then page:Show() else page:Hide() end
@@ -371,7 +410,7 @@ function ns.CreateOptions()
 		page:SetAllPoints(body)
 		page:Hide()
 		pages[key] = page
-		lowest = math.min(lowest, def[3](page, db, flag))
+		lowest = math.min(lowest, def[3](page))
 	end
 
 	-- Minimized, the window folds into its medallion, floating where the medallion was: drag it away,
@@ -428,7 +467,7 @@ function ns.CreateOptions()
 
 	panel:SetHeight(-lowest + 24)
 	refreshers[#refreshers + 1] = function() PaintArt(art, wash, panel:GetWidth(), panel:GetHeight()) end
-	Open(pages[db.tab] and db.tab or "general")
+	Open(pages[ns.char.tab] and ns.char.tab or "general")
 	panel:SetScript("OnShow", function() for _, fn in ipairs(refreshers) do fn() end end)
 	panel:SetScript("OnHide", function()
 		ns.CloseDropdowns()
