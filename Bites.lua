@@ -5,8 +5,7 @@ local ADDON, ns = ...
 -- of the boxes (Boxes.lua) as a line.
 
 local FADE_AT = 0.65      -- share of a number's time before its fade starts
-local POP_TIME = 0.15     -- a popping crit eases from POP_SIZE down to its size over this long
-local POP_SIZE = 1.8      -- how big a popping crit appears
+local POP_TIME = 0.15     -- a popping crit shrinks to its size over this long
 local SIZE = 20           -- a normal hit's font size at scale 1, and every icon's size
 ns.SIZE = SIZE
 local MAX_TEXTS = 40
@@ -196,7 +195,8 @@ end
 -- The path, the start gap and the stack line are screen distances (UIParent units): the text's
 -- own offsets are scaled with it, so each is divided by the text's scale, and a bigger text size
 -- doesn't send numbers further. The stack line grows with the text, as the lines it keeps apart do.
--- Every number moves from a fixed spot in UIParent units (for a plate, read when it appears).
+-- On a plate the spot is kept up to date while the plate still shows the same name, so a plate that
+-- goes away mid-flight leaves the text where it was.
 local START_GAP = 12  -- how far above the plate a number starts
 
 -- What a number starts above: the plate, or with ElvUI's plates the row of your debuffs on it, so
@@ -206,27 +206,28 @@ local function PlateTop(plate)
 	if debuffs and debuffs:IsShown() and debuffs[1] and debuffs[1]:IsShown() then return debuffs end
 	return plate
 end
--- A popping crit appears at once POP_SIZE big and eases down to its size (fast first, then gentle,
--- never below it), and only starts its path once it has settled.
-local function Pop(elapsed)
-	local f = 1 - elapsed / POP_TIME
-	return 1 + (POP_SIZE - 1) * f * f
-end
-
 local function Move(t, elapsed)
-	local landing = t.pop and elapsed < POP_TIME
-	-- a popping crit's path waits for it to land
-	local travel = t.pop and math.max(0, elapsed - POP_TIME) or elapsed
-	local p = travel / (t.pop and t.duration - POP_TIME or t.duration)
+	local p = elapsed / t.duration
 	local textScale = ns.db.scale
 	local scale = textScale
-	if landing then scale = scale * Pop(elapsed) end
+	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
 	t:SetScale(scale)
 	local dx, dy = Path(t, p)
 	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
 	dx, dy = dx / scale, dy / scale
 	t:ClearAllPoints()
-	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x / scale + dx, t.y / scale + dy)
+	if t.plate and ns.PlateShows(t.plate, t.name) then
+		local base = PlateTop(t.plate)
+		t:SetPoint("CENTER", base, "TOP", dx, dy)
+		local x, top = t.plate:GetCenter(), base:GetTop()
+		if x and top then
+			local s = t.plate:GetEffectiveScale() / UIParent:GetEffectiveScale()
+			t.x, t.y = x * s, top * s
+		end
+	else
+		t.plate = nil
+		t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x / scale + dx, t.y / scale + dy)
+	end
 	t:SetAlpha(p > FADE_AT and 1 - (p - FADE_AT) / (1 - FADE_AT) or 1)
 end
 
@@ -248,19 +249,6 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 		t.icon:Hide(); t.edge:Hide()
 	end
 	t.plate, t.name, t.x, t.y = plate, name, x, y
-	-- how far above the plate's top the number starts, read once: over the debuff row if the plate
-	-- shows one now (read every frame, ElvUI's row flickering would make the number jump)
-	-- A number on a plate starts over the plate's top (or its debuff row), read once here: from then
-	-- on it moves on its own, since a plate shifts a pixel or two every frame as you or the camera
-	-- move and a number following it would tremble.
-	if plate then
-		local base = PlateTop(plate)
-		local cx, top = plate:GetCenter(), base:GetTop()
-		if cx and top then
-			local ui = UIParent:GetEffectiveScale()
-			t.x, t.y = cx * plate:GetEffectiveScale() / ui, top * base:GetEffectiveScale() / ui
-		end
-	end
 	t.label, t.shield, t.serial = label, nil, ns.NextSerial()
 	ns.lastShown = t
 	t.straight = column
