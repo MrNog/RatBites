@@ -24,6 +24,7 @@ local COLOR = {
 	crit = { 1, 0.45, 0.10 },
 	miss = { 0.9, 0.9, 0.9 },
 	heal = { 0.25, 1, 0.35 },
+	overheal = { 0.45, 0.62, 0.45 },
 	taken = { 1, 0.22, 0.18 },
 }
 
@@ -198,7 +199,7 @@ local function Who(guid, flags)
 	if band(flags, MINE) ~= 0 and band(flags, PET) ~= 0 then return "pet" end
 end
 
--- kind ("swing", "spell", "dot", "heal" or "miss"), amount, crit, icon, miss type
+-- kind ("swing", "spell", "dot", "heal", "overheal" or "miss"), amount, crit, icon, miss type
 local function Read(event, ...)
 	if event == "SWING_DAMAGE" then
 		local amount, _, _, _, _, _, crit = ...
@@ -214,7 +215,10 @@ local function Read(event, ...)
 		return "dot", amount, crit, SpellIcon(id)
 	elseif event == "SPELL_HEAL" or event == "SPELL_PERIODIC_HEAL" then
 		local id, _, _, amount, over, _, crit = ...
-		return "heal", amount - (over or 0), crit, SpellIcon(id)
+		local healed = amount - (over or 0)
+		-- a heal on someone already full still shows, dimmed, with what it would have healed
+		if healed <= 0 then return "overheal", amount, crit, SpellIcon(id) end
+		return "heal", healed, crit, SpellIcon(id)
 	elseif event == "SWING_MISSED" then
 		local missType = ...
 		return "miss", nil, nil, ATTACK_ICON, missType
@@ -227,7 +231,7 @@ end
 local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 	local db, show = ns.db, ns.db.show
 	if who == "pet" and not show.pet then return end
-	if not show[kind] then return end
+	if not show[kind == "overheal" and "heal" or kind] then return end
 	if amount then
 		if amount <= 0 or not show[crit and "crit" or "normal"] then return end
 	end
@@ -247,14 +251,14 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 		label, color, size = _G[miss] or miss, COLOR.miss, SIZE * 0.8
 	else
 		label = Abbrev(amount)
-		if kind == "heal" then
-			label, color = "+" .. label, COLOR.heal
+		if kind == "heal" or kind == "overheal" then
+			label, color = "+" .. label, kind == "heal" and COLOR.heal or COLOR.overheal
 		elseif db.classColor and ns.classColor then
 			color = ns.classColor
 		end
 		if kind == "dot" then size = SIZE * 0.8 end
 		if crit then
-			if kind ~= "heal" then color = COLOR.crit end
+			if kind ~= "heal" and kind ~= "overheal" then color = COLOR.crit end
 			if db.critStyle == "big" then size = size * 1.5 end
 			if db.critStyle == "pop" then size, pop = size * 1.3, true end
 		elseif (kind == "swing" or kind == "spell") and db.bigGold and IsBig(amount) then
@@ -267,7 +271,7 @@ end
 
 local function Incoming(kind, amount, crit, icon)
 	local inc = ns.db.incoming
-	if kind == "miss" or not amount or amount <= 0 then return end
+	if kind == "miss" or kind == "overheal" or not amount or amount <= 0 then return end
 	if kind == "heal" then
 		if not inc.heals then return end
 	elseif not inc.damage then

@@ -37,6 +37,13 @@ local function Scan()
 	seen = count
 end
 
+-- ElvUI draws its own plate on top (plate.UnitFrame) and holds every plate at full alpha, so its own
+-- target flag is read instead
+local function IsTargetPlate(f)
+	if f.UnitFrame then return f.UnitFrame.isTarget end
+	return f:GetAlpha() > 0.99
+end
+
 -- the plate showing this unit, or nil when none can be told apart
 function ns.PlateFor(guid, name)
 	if not name then return nil end
@@ -49,7 +56,7 @@ function ns.PlateFor(guid, name)
 		if f:IsShown() and text:GetText() == name then
 			count = count + 1
 			only = f
-			if isTarget and f:GetAlpha() > 0.99 then pick = f end
+			if isTarget and IsTargetPlate(f) then pick = f end
 			if not pick and f == last then pick = f end
 		end
 	end
