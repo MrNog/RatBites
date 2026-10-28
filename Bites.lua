@@ -228,12 +228,11 @@ local function Move(t, elapsed)
 	dx, dy = dx / scale, dy / scale
 	t:ClearAllPoints()
 	if t.plate and ns.PlateShows(t.plate, t.name) then
-		local base = PlateTop(t.plate)
-		t:SetPoint("CENTER", base, "TOP", dx, dy)
-		local x, top = t.plate:GetCenter(), base:GetTop()
+		t:SetPoint("CENTER", t.plate, "TOP", dx, dy + t.lift / scale)
+		local x, top = t.plate:GetCenter(), t.plate:GetTop()
 		if x and top then
 			local s = t.plate:GetEffectiveScale() / UIParent:GetEffectiveScale()
-			t.x, t.y = x * s, top * s
+			t.x, t.y = x * s, top * s + t.lift
 		end
 	else
 		t.plate = nil
@@ -260,6 +259,17 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 		t.icon:Hide(); t.edge:Hide()
 	end
 	t.plate, t.name, t.x, t.y = plate, name, x, y
+	-- how far above the plate's top the number starts, read once: over the debuff row if the plate
+	-- shows one now (read every frame, ElvUI's row flickering would make the number jump)
+	t.lift = 0
+	if plate then
+		local base = PlateTop(plate)
+		local baseTop, plateTop = base:GetTop(), plate:GetTop()
+		if base ~= plate and baseTop and plateTop then
+			t.lift = math.max(0, baseTop * base:GetEffectiveScale() - plateTop * plate:GetEffectiveScale())
+				/ UIParent:GetEffectiveScale()
+		end
+	end
 	t.label, t.shield, t.serial = label, nil, ns.NextSerial()
 	ns.lastShown = t
 	t.straight = column
