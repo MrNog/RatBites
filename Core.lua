@@ -177,6 +177,101 @@ function ns.ResetProfile()
 	ns.UseProfile()
 end
 
+--------------------------------------------------------------------------------
+-- sharing a profile as text: "RB1:" then the settings in a small format read back by our own parser
+-- (never run as code), and only settings RatBites knows, of the right type, are kept
+--   n<number>;   t / f (true / false)   s<length>:<text>   { key value ... }
+--------------------------------------------------------------------------------
+
+local SHARE_TAG = "RB1:"
+
+local function Write(v, out)
+	local kind = type(v)
+	if kind == "number" then
+		out[#out + 1] = "n" .. tostring(v) .. ";"
+	elseif kind == "boolean" then
+		out[#out + 1] = v and "t" or "f"
+	elseif kind == "string" then
+		out[#out + 1] = "s" .. #v .. ":" .. v
+	elseif kind == "table" then
+		out[#out + 1] = "{"
+		for k, val in pairs(v) do
+			Write(k, out)
+			Write(val, out)
+		end
+		out[#out + 1] = "}"
+	end
+end
+
+-- the value at s[i] and the index after it, or nil, nil when the text is not well formed
+local function Read(s, i, depth)
+	if depth > 8 then return nil, nil end
+	local c = s:sub(i, i)
+	if c == "n" then
+		local j = s:find(";", i, true)
+		local num = j and tonumber(s:sub(i + 1, j - 1))
+		if not num then return nil, nil end
+		return num, j + 1
+	elseif c == "t" then
+		return true, i + 1
+	elseif c == "f" then
+		return false, i + 1
+	elseif c == "s" then
+		local j = s:find(":", i, true)
+		local len = j and tonumber(s:sub(i + 1, j - 1))
+		if not len or len < 0 or j + len > #s then return nil, nil end
+		return s:sub(j + 1, j + len), j + len + 1
+	elseif c == "{" then
+		local t = {}
+		i = i + 1
+		while s:sub(i, i) ~= "}" do
+			if i > #s then return nil, nil end
+			local k, v
+			k, i = Read(s, i, depth + 1)
+			if not i or (type(k) ~= "string" and type(k) ~= "number") then return nil, nil end
+			v, i = Read(s, i, depth + 1)
+			if not i then return nil, nil end
+			t[k] = v
+		end
+		return t, i + 1
+	end
+	return nil, nil
+end
+
+-- only the settings the defaults have, each of the defaults' type; anything else falls back
+local function Clean(src, def)
+	local out = {}
+	for k, dv in pairs(def) do
+		local v = src[k]
+		if type(dv) == "table" then
+			out[k] = Clean(type(v) == "table" and v or {}, dv)
+		elseif type(v) == type(dv) then
+			out[k] = v
+		else
+			out[k] = dv
+		end
+	end
+	return out
+end
+
+function ns.ExportProfile()
+	local out = { SHARE_TAG }
+	Write(Clean(ns.db, ns.DEFAULTS), out)
+	return table.concat(out)
+end
+
+-- reads a shared text into the active profile; returns true, or false and why not
+function ns.ImportProfile(text)
+	text = strtrim(text or "")
+	if text:sub(1, #SHARE_TAG) ~= SHARE_TAG then return false, "That isn't a RatBites profile." end
+	local t, after = Read(text, #SHARE_TAG + 1, 0)
+	if type(t) ~= "table" or after ~= #text + 1 then return false, "The profile text is cut or damaged." end
+	RatBitesDB.profiles[ns.ActiveProfile()] = Clean(t, ns.DEFAULTS)
+	ns.db = nil
+	ns.UseProfile()
+	return true
+end
+
 ns.On("ADDON_LOADED", function(name)
 	if name ~= ADDON then return end
 	RatBitesDB = RatBitesDB or {}

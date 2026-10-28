@@ -297,6 +297,11 @@ local function ProfilesPage(page)
 		function() return "none" end,
 		function(v) if v ~= "none" then ns.CopyProfile(v) end end)
 	y = Action(page, y, "Reset this profile", ns.ResetProfile, function() return "Reset" end)
+	y = Section(page, y, "Share")
+	y = Action(page, y, "Send this profile to a friend", function() ns.OpenShare("export") end,
+		function() return "Export" end)
+	y = Action(page, y, "Load a friend's profile", function() ns.OpenShare("import") end,
+		function() return "Import" end)
 	y = Section(page, y, "Talent specs")
 	y = Check(page, y, "Switch profile with my talents",
 		function() return ns.char.dual end,

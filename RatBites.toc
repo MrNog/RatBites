@@ -11,4 +11,5 @@ Plates.lua
 Bites.lua
 Boxes.lua
 Options.lua
+Share.lua
 Minimap.lua
