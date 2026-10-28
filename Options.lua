@@ -202,8 +202,9 @@ local function LookPage(page, db, flag)
 		{ { "pop", "Pop" }, { "big", "Bigger" }, { "plain", "Plain" } },
 		flag(db, "critStyle"))
 	y = Check(page, y, "Big hits in gold", flag(db, "bigGold"))
-	y = Check(page, y, "Damage in my class color", flag(db, "classColor"))
-	y = Check(page, y, "Crits in my class color", flag(db, "classCrit"))
+	y = Choice(page, y, "My class color for",
+		{ { "off", "Off" }, { "normal", "Normal hits" }, { "crit", "Crits" } },
+		flag(db, "classColorFor"))
 	return y
 end
 

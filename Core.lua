@@ -23,9 +23,8 @@ ns.DEFAULTS = {
 	iconScale = 1,  -- an icon's size against its number's text
 	font = "friz",
 	icons = true,
-	classColor = false,
+	classColorFor = "off",  -- "normal" = your normal damage, "crit" = your crits; the other keeps its colour
 	bigGold = true,
-	classCrit = false,
 	critStyle = "pop",
 	spread = "normal",
 	numbers = "short",
@@ -103,6 +102,13 @@ ns.On("ADDON_LOADED", function(name)
 		if db.boxMerge and key == "mine" then b.merge = db.boxMerge end
 	end
 	db.boxScroll, db.boxAlign, db.boxTime, db.boxMerge = nil, nil, nil, nil
+	-- class colour was two checkboxes; normal hits win when both were on, so crits keep standing out
+	if db.classColor then
+		db.classColorFor = "normal"
+	elseif db.classCrit then
+		db.classColorFor = "crit"
+	end
+	db.classColor, db.classCrit = nil, nil
 end)
 
 ns.On("PLAYER_LOGIN", function()

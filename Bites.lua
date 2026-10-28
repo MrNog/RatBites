@@ -363,12 +363,12 @@ local function Style(who, kind, amount, crit, miss)
 		label = Abbrev(amount)
 		if kind == "heal" or kind == "overheal" then
 			label, color = "+" .. label, kind == "heal" and COLOR.heal or COLOR.overheal
-		elseif db.classColor and ns.classColor then
+		elseif db.classColorFor == "normal" and ns.classColor then
 			color = ns.classColor
 		end
 		if kind == "dot" then size = SIZE * 0.8 end
 		if crit then
-			if kind ~= "overheal" and db.classCrit and ns.classCrit then
+			if kind ~= "overheal" and db.classColorFor == "crit" and ns.classCrit then
 				color = ns.classCrit
 			elseif kind == "heal" then
 				color = COLOR.healCrit
