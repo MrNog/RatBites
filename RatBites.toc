@@ -2,7 +2,7 @@
 ## Title: RatBites
 ## Notes: Damage and heal numbers with spell icons on each nameplate.
 ## Author: Okanor
-## Version: 0.1.0
+## Version: 1.0.0
 ## SavedVariables: RatBitesDB
 
 Core.lua
