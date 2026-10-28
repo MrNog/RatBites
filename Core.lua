@@ -91,7 +91,8 @@ ns.On("ADDON_LOADED", function(name)
 	copyDefaults(ns.DEFAULTS, RatBitesDB)
 	ns.db = RatBitesDB
 	-- output goes on nameplates or into My box; older choices (target only, centre screen) fold into nameplates
-	if ns.db.anchor ~= "box" then ns.db.anchor = "plates" end
+	local anchors = { plates = true, box = true, healsplates = true, dmgplates = true }
+	if not anchors[ns.db.anchor] then ns.db.anchor = "plates" end
 	ns.db.receivedOn = nil
 	-- box settings used to be shared by both boxes: each box starts from the shared choice
 	local db = ns.db

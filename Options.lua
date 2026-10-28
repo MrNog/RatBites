@@ -177,7 +177,8 @@ local function GeneralPage(page, db, flag)
 	y = Check(page, y, "Hide the game's own numbers", flag(db, "hideBlizzard"))
 	y = Section(page, y, "Output: what you do")
 	y = Choice(page, y, "Show on",
-		{ { "plates", "Nameplates" }, { "box", "My box" } },
+		{ { "plates", "Nameplates" }, { "box", "My box" },
+			{ "healsplates", "Heals plates, dmg box" }, { "dmgplates", "Dmg plates, heals box" } },
 		flag(db, "anchor"))
 	y = Choice(page, y, "Heals with no nameplate",
 		{ { "box", "My box" }, { "column", "Column" }, { "hide", "Hide" } },

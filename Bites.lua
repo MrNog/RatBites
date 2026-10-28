@@ -385,6 +385,13 @@ local function Style(who, kind, amount, crit, miss)
 	return label, color, size, pop
 end
 
+-- Show on: "plates" and "box" send both kinds one way; "healsplates" puts heals on plates and damage in
+-- My box, "dmgplates" the other way round
+function ns.ToBox(heal)
+	local into = ns.db.anchor
+	return into == "box" or (into == "healsplates" and not heal) or (into == "dmgplates" and heal)
+end
+
 local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 	local db, show = ns.db, ns.db.show
 	if who == "pet" and not show.pet then return end
@@ -393,7 +400,7 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 		if amount <= 0 or not show[crit and "crit" or "normal"] then return end
 	end
 	local label, color, size, pop = Style(who, kind, amount, crit, miss)
-	if db.anchor == "box" then
+	if ns.ToBox(HEALING[kind]) then
 		ns.BoxAdd("mine", label, color, size, icon, amount, HEALING[kind] and "+" or "")
 		return
 	end
@@ -540,8 +547,9 @@ function ns.Test()
 		{ "Shield", COLOR.shield, SIZE * 0.85, false },
 	}
 	for i, h in ipairs(hits) do
+		local heal = h[2] == COLOR.heal or h[2] == COLOR.shield
 		table.insert(queued, { at = GetTime() + (i - 1) * 0.25, fn = function()
-			if db.anchor == "box" then
+			if ns.ToBox(heal) then
 				ns.BoxAdd("mine", h[1], h[2], h[3], pick())
 			else
 				Show(plate, name, x, y, h[1], h[2], h[3], pick(), h[4])
