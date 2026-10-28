@@ -155,12 +155,13 @@ end
 -- Each number moves by WoW's own animation system, so the engine moves it smoothly between frames:
 -- its spot is set once, then animations slide it. Sideways moves at a steady pace while the rise
 -- eases out, which together make the arc; the fade is an animation too.
--- The client draws fonts up to 64 px, so a number bigger than that (a big crit) is drawn at 64 and
--- its frame scaled up the rest; the frame's offsets are scaled with it, so they are divided back.
+-- The client turns down a font size that is too big (the text then keeps its old, small font), so a
+-- number bigger than FONT_MAX (a big crit) is drawn at FONT_MAX and its frame scaled up the rest;
+-- the frame's offsets are scaled with it, so they are divided back.
 -- A popping crit lands like a bomb: it appears BOMB times bigger and shrinks smoothly back over
 -- BOMB_TIME, sized by hand for that moment (its spot kept), and only then does its path start.
 local START_GAP = 12  -- how far above the plate a number starts
-local FONT_MAX = 64
+local FONT_MAX = 32
 local BOMB, BOMB_TIME = 2.5, 0.25
 
 local function Finished(group)
@@ -293,9 +294,9 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t.text:SetShadowOffset(1 / t.frameScale, -1 / t.frameScale)
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
-	-- a crit's icon grows with it; every other icon has one size (a normal hit's). The black edge
+	-- every icon has one size (a normal hit's), crits too: only their text grows. The black edge
 	-- around it stays one screen pixel however much the frame is scaled.
-	local iconSize = (color.thick and want or SIZE * db.scale) * db.iconScale / t.frameScale
+	local iconSize = SIZE * db.scale * db.iconScale / t.frameScale
 	t.icon:SetWidth(iconSize); t.icon:SetHeight(iconSize)
 	local edge = 1 / t.frameScale
 	t.edge:ClearAllPoints()
@@ -816,7 +817,7 @@ local function PaintLegend()
 		row.icon:SetTexture(icon)
 		row.icon:SetWidth(iconSize); row.icon:SetHeight(iconSize)
 		if db.icons then row.icon:Show() else row.icon:Hide() end
-		row.number:SetFont(ns.FontPath(), SIZE * e[4], color.thick and "THICKOUTLINE" or "OUTLINE")
+		row.number:SetFont(ns.FontPath(), math.min(FONT_MAX, SIZE * e[4]), color.thick and "THICKOUTLINE" or "OUTLINE")
 		row.number:SetTextColor(color[1], color[2], color[3])
 		row.number:SetText(e[3])
 		row.name:SetText(e[1])
