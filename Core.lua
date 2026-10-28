@@ -25,6 +25,7 @@ ns.DEFAULTS = {
 	icons = true,
 	classColor = false,
 	bigGold = true,
+	classCrit = false,
 	critStyle = "pop",
 	spread = "normal",
 	numbers = "short",

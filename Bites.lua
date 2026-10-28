@@ -17,18 +17,21 @@ ns.FONTS = {
 	{ "skurri", "Skurri", [[Fonts\SKURRI.TTF]] },
 }
 
+-- Crit colours are saturated and drawn with a thick outline (thick = true), so a crit stands out
+-- from the softer normal numbers at a glance.
 local COLOR = {
 	normal = { 0.72, 0.72, 0.72 },
 	big = { 1, 0.82, 0 },
-	crit = { 1, 0.45, 0.10 },
+	crit = { 1, 0.4, 0, thick = true },
 	miss = { 0.9, 0.9, 0.9 },
-	heal = { 0.25, 1, 0.35 },
-	healCrit = { 0.75, 1, 0.15 },
+	heal = { 0.4, 0.88, 0.45 },
+	healCrit = { 0.15, 1, 0.05, thick = true },
 	overheal = { 0.45, 0.62, 0.45 },
 	shield = { 0.55, 0.82, 1 },
-	taken = { 1, 0.22, 0.18 },
-	takenCrit = { 1, 0.5, 0.15 },
+	taken = { 0.88, 0.32, 0.27 },
+	takenCrit = { 1, 0.08, 0.02, thick = true },
 }
+ns.COLOR = COLOR
 
 -- The game's four fonts, then every font other addons registered with LibSharedMedia (ElvUI's,
 -- SharedMedia packs), keyed "lsm:<name>". Read when the settings window is built, after they loaded.
@@ -201,7 +204,7 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	if #active >= MAX_TEXTS then Release(1) end
 	local t = Acquire()
 	local db = ns.db
-	t.text:SetFont(ns.FontPath(), size, "OUTLINE")
+	t.text:SetFont(ns.FontPath(), size, color.thick and "THICKOUTLINE" or "OUTLINE")
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
 	if icon and db.icons then
@@ -342,7 +345,9 @@ local function Style(who, kind, amount, crit, miss)
 		end
 		if kind == "dot" then size = SIZE * 0.8 end
 		if crit then
-			if kind == "heal" then
+			if kind ~= "overheal" and db.classCrit and ns.classCrit then
+				color = ns.classCrit
+			elseif kind == "heal" then
 				color = COLOR.healCrit
 			elseif kind ~= "overheal" then
 				color = COLOR.crit
@@ -433,7 +438,10 @@ end)
 
 ns.On("PLAYER_LOGIN", function()
 	local c = RAID_CLASS_COLORS[select(2, UnitClass("player"))]
-	if c then ns.classColor = { c.r, c.g, c.b } end
+	if c then
+		ns.classColor = { c.r, c.g, c.b }
+		ns.classCrit = { c.r, c.g, c.b, thick = true }
+	end
 end)
 
 --------------------------------------------------------------------------------

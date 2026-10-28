@@ -203,6 +203,7 @@ local function LookPage(page, db, flag)
 		flag(db, "critStyle"))
 	y = Check(page, y, "Big hits in gold", flag(db, "bigGold"))
 	y = Check(page, y, "Damage in my class color", flag(db, "classColor"))
+	y = Check(page, y, "Crits in my class color", flag(db, "classCrit"))
 	return y
 end
 

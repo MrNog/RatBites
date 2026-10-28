@@ -170,7 +170,7 @@ function ns.BoxAdd(key, label, color, size, icon)
 	local line = table.remove(box.pool) or NewLine(box)
 	line.label, line.iconPath, line.color, line.count = label, icon, color, 1
 	size = size * db.scale
-	line.text:SetFont(ns.FontPath(), size, "OUTLINE")
+	line.text:SetFont(ns.FontPath(), size, color.thick and "THICKOUTLINE" or "OUTLINE")
 	line.text:SetText(label)
 	line.text:SetTextColor(color[1], color[2], color[3])
 	if icon and db.icons then
@@ -197,11 +197,11 @@ function ns.SetBoxesUnlocked(on)
 		if on then box.edit:Show() else box.edit:Hide() end
 	end
 	if on then
-		ns.BoxAdd("mine", "12.4k", { 1, 0.45, 0.10 }, 26)
-		ns.BoxAdd("mine", "+1923", { 0.25, 1, 0.35 }, 20)
+		ns.BoxAdd("mine", "12.4k", ns.COLOR.crit, 26)
+		ns.BoxAdd("mine", "+1923", ns.COLOR.heal, 20)
 		ns.BoxAdd("mine", "2331", { 0.72, 0.72, 0.72 }, 20)
-		ns.BoxAdd("received", "-640", { 1, 0.22, 0.18 }, 18)
-		ns.BoxAdd("received", "+812", { 0.25, 1, 0.35 }, 18)
+		ns.BoxAdd("received", "-640", ns.COLOR.taken, 18)
+		ns.BoxAdd("received", "+812", ns.COLOR.heal, 18)
 	end
 end
 
