@@ -6,9 +6,8 @@ local ADDON, ns = ...
 
 local FADE_AT = 0.65      -- share of a number's time before its fade starts
 local SLAM_TIME = 0.12    -- a popping crit slams from big down past its size over this long
-local POP_TIME = 0.24     -- ... then bounces back to its size and stops shaking by this time
+local POP_TIME = 0.24     -- ... then bounces back to its size by this time
 local SLAM_SIZE = 2.3     -- how big a popping crit starts
-local SHAKE = 3           -- how far (px) a popping crit shakes while it lands
 local SIZE = 20           -- a normal hit's font size at scale 1, and every icon's size
 ns.SIZE = SIZE
 local MAX_TEXTS = 40
@@ -210,7 +209,7 @@ local function PlateTop(plate)
 	return plate
 end
 -- A popping crit lands like a blow: it starts SLAM_SIZE big and slams down a little past its size,
--- bounces back to it, shaking the whole time, and only starts its path once it has landed.
+-- bounces back to it, and only starts its path once it has landed.
 local function Slam(elapsed)
 	if elapsed < SLAM_TIME then
 		local f = elapsed / SLAM_TIME
@@ -229,10 +228,6 @@ local function Move(t, elapsed)
 	if landing then scale = scale * Slam(elapsed) end
 	t:SetScale(scale)
 	local dx, dy = Path(t, p)
-	if landing then
-		dx = dx + (math.random() * 2 - 1) * SHAKE
-		dy = dy + (math.random() * 2 - 1) * SHAKE
-	end
 	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
 	dx, dy = dx / scale, dy / scale
 	t:ClearAllPoints()
