@@ -198,7 +198,8 @@ end
 -- On a plate the spot is kept up to date while the plate still shows the same name, so a plate that
 -- goes away mid-flight leaves the text where it was.
 local START_GAP = 12  -- how far above the plate a number starts
-local DOT_LINGER = 4  -- sec a DoT's number stays on its plate after a tick
+local DOT_LINGER = 4  -- sec a DoT's number holds on its plate after a tick
+local DOT_ABOVE = 26  -- how much higher than other numbers a DoT's number holds
 
 -- What a number starts above: the plate, or with ElvUI's plates the row of your debuffs on it, so
 -- the number doesn't sit on top of the icons.
@@ -215,7 +216,9 @@ local function Move(t, elapsed)
 	local left = t.duration - elapsed
 	local textScale = ns.db.scale
 	local scale = textScale
-	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
+	-- a pop runs from the number's start, or from its last DoT tick
+	local since = t.popAt and GetTime() - t.popAt or elapsed
+	if t.pop and since < POP_TIME then scale = scale * (1 + 0.5 * (1 - since / POP_TIME)) end
 	t:SetScale(scale)
 	local dx, dy = Path(t, p)
 	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
@@ -246,7 +249,9 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, ti
 				t.count, t.tick = t.count + 1, t.tick + tick
 				t.label = Abbrev(t.tick) .. " x" .. t.count
 				t.text:SetText(t.label)
-				t.start, t.pop = GetTime(), true
+				-- it stays where it holds and pops there, its time starting over from the hold
+				t.start, t.duration = GetTime() - t.moveTime, t.moveTime + DOT_LINGER
+				t.pop, t.popAt = true, GetTime()
 				ns.lastShown = t
 				return
 			end
@@ -274,7 +279,12 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, ti
 	t.anim = column and "rise" or db.animation
 	t.pop, t.rise, t.duration, t.moveTime = pop, db.height, db.duration, db.duration
 	-- a DoT's number outlives the gap to its next tick (most tick every 3 sec), so the ticks join it
-	if tick and plate then t.duration = math.max(db.duration, DOT_LINGER) end
+	-- and it holds above where other numbers end, so a hit landing meanwhile never ends on top of it
+	t.popAt = nil
+	if tick and plate then
+		t.duration = t.moveTime + DOT_LINGER
+		t.rise = db.height + DOT_ABOVE
+	end
 	t.line = StackLine(plate or format("%d:%d", x, y), size)
 	if t.straight then
 		t.dx = 0
