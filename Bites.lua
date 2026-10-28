@@ -453,6 +453,15 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	end
 	local kind, amount, crit, icon, miss = Read(event, ...)
 	if not kind then return end
+	-- your own auto-attacks show the weapon doing them: main hand for swings, the ranged slot for
+	-- Auto Shot, wands and throws (an empty slot keeps the plain sword)
+	if who == "player" then
+		if event == "SWING_DAMAGE" or event == "SWING_MISSED" then
+			icon = GetInventoryItemTexture("player", 16) or icon
+		elseif event == "RANGE_DAMAGE" or event == "RANGE_MISSED" then
+			icon = GetInventoryItemTexture("player", 18) or icon
+		end
+	end
 	if kind == "shield" then
 		amount = ShieldSize((...), destGUID)
 		-- a refresh only shows when it has a size to tell: Val'anyr refreshes on every heal
