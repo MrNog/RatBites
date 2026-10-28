@@ -8,6 +8,7 @@ local ADDON, ns = ...
 local LINE_GAP = 4
 local FADE = 0.5   -- a line fades over its last half second
 local MERGE_TIME = 0.4
+local EDGE_PAD = 8  -- left- or right-aligned lines keep this far from the box's side
 local NAMES = { mine = "My box", received = "Received box" }
 
 local boxes = {}
@@ -33,7 +34,6 @@ local function NewLine(box)
 	local line = CreateFrame("Frame", nil, box)
 	line:SetWidth(1); line:SetHeight(1)
 	line.text = line:CreateFontString(nil, "OVERLAY")
-	line.text:SetPoint("CENTER")
 	line.text:SetShadowColor(0, 0, 0, 1)
 	line.text:SetShadowOffset(1, -1)
 	line.edge = line:CreateTexture(nil, "ARTWORK")
@@ -53,6 +53,24 @@ local function Drop(box, i)
 	table.insert(box.pool, line)
 end
 
+-- A line is an anchor point with its icon and text around it. Centred, the text sits on the point;
+-- left, the point is the box's left edge and icon then text run right from it; right, the text ends
+-- on the box's right edge with the icon before it.
+local function Align(box, line)
+	local align = ns.db.boxAlign
+	line.text:ClearAllPoints()
+	if align == "left" then
+		local icon = line.icon:IsShown() and line.icon:GetWidth() + 4 or 0
+		line.text:SetPoint("LEFT", line, "CENTER", icon, 0)
+		return EDGE_PAD
+	elseif align == "right" then
+		line.text:SetPoint("RIGHT", line, "CENTER", 0, 0)
+		return box:GetWidth() - EDGE_PAD
+	end
+	line.text:SetPoint("CENTER", line, "CENTER", 0, 0)
+	return box:GetWidth() / 2
+end
+
 -- newest line first: at the bottom when lines scroll up, at the top when they scroll down
 local function Layout(box)
 	local up = ns.db.boxScroll ~= "down"
@@ -64,11 +82,12 @@ local function Layout(box)
 			for j = #box.lines, i, -1 do Drop(box, j) end
 			return
 		end
+		local x = Align(box, line)
 		line:ClearAllPoints()
 		if up then
-			line:SetPoint("CENTER", box, "BOTTOM", 0, offset + h / 2)
+			line:SetPoint("CENTER", box, "BOTTOMLEFT", x, offset + h / 2)
 		else
-			line:SetPoint("CENTER", box, "TOP", 0, -offset - h / 2)
+			line:SetPoint("CENTER", box, "TOPLEFT", x, -offset - h / 2)
 		end
 		offset = offset + h
 	end

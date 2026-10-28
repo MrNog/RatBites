@@ -244,6 +244,9 @@ local function BoxesPage(page, db, flag)
 	y = Choice(page, y, "New lines come in at",
 		{ { "up", "The bottom" }, { "down", "The top" } },
 		flag(db, "boxScroll"))
+	y = Choice(page, y, "Text alignment",
+		{ { "left", "Left" }, { "center", "Center" }, { "right", "Right" } },
+		flag(db, "boxAlign"))
 	y = Stepper(page, y, "Each line stays", 2, 10, 1, function(v) return format("%ds", v) end, flag(db, "boxTime"))
 	return y
 end
