@@ -120,6 +120,33 @@ local function Stepper(parent, y, label, lo, hi, step, fmt, get, set)
 	return y - ROW_H
 end
 
+-- The training-yard picture behind the settings, as RatStash's behind its windows. Its subject sits in
+-- the right third, so the picture keeps its right edge and a dark wash fades in from the left, where
+-- the rows' names are. The file is 1024x512; the picture is 4:3.
+local BG_TEX = [[Interface\AddOns\RatBites\Media\settings-bg]]
+local BG_ASPECT = 4 / 3
+
+local function PaintArt(art, wash, w, h)
+	local db = ns.db
+	local a = db.bgOn and (db.bgArt or 0) or 0
+	if a <= 0 then art:Hide(); wash:Hide(); return end
+	art:SetTexture(BG_TEX)
+	local want = w / h
+	if want < BG_ASPECT then
+		local span = want / BG_ASPECT
+		art:SetTexCoord(1 - span, 1, 0, 1)
+	else
+		local span = BG_ASPECT / want
+		art:SetTexCoord(0, 1, 0.5 - span / 2, 0.5 + span / 2)
+	end
+	art:Show()
+	-- stronger art = thinner wash
+	local d = C.panelD
+	wash:SetTexture(ns.FLAT)
+	wash:SetGradientAlpha("HORIZONTAL", d[1], d[2], d[3], 0.95 - a * 0.25, d[1], d[2], d[3], 0.85 - a * 0.65)
+	wash:Show()
+end
+
 -- a red button on the right of its row; label() gives its text after each change
 local function Action(parent, y, text, onClick, label)
 	local row = Row(parent, y, text)
@@ -144,6 +171,11 @@ function ns.CreateOptions()
 	panel:SetPoint("CENTER")
 	ns.SkinWindow(panel)
 	tinsert(UISpecialFrames, "RatBitesOptions")
+	local art = panel:CreateTexture(nil, "BORDER")
+	art:SetPoint("TOPLEFT", ns.INSET, -ns.INSET); art:SetPoint("BOTTOMRIGHT", -ns.INSET, ns.INSET)
+	ns.CoverCorners(panel, art)
+	local wash = panel:CreateTexture(nil, "ARTWORK")
+	wash:SetAllPoints(art)
 
 	local head, title = ns.TitleBar(panel, 30)
 	head:EnableMouse(true)
@@ -235,7 +267,13 @@ function ns.CreateOptions()
 		function() ns.SetBoxesUnlocked(not ns.BoxesUnlocked()) end,
 		function() return ns.BoxesUnlocked() and "Lock" or "Unlock" end)
 
+	y = Section(panel, y - 10, "Window")
+	y = Check(panel, y, "Background art", flag(db, "bgOn"))
+	y = Stepper(panel, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end,
+		function() return db.bgArt end, function(v) db.bgArt = v end)
+
 	panel:SetHeight(-math.min(y, leftEnd) + 16)
+	refreshers[#refreshers + 1] = function() PaintArt(art, wash, panel:GetWidth(), panel:GetHeight()) end
 	panel:SetScript("OnShow", function() for _, fn in ipairs(refreshers) do fn() end end)
 	panel:SetScript("OnHide", function()
 		ns.CloseDropdowns()

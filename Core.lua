@@ -33,6 +33,8 @@ ns.DEFAULTS = {
 	show = { normal = true, crit = true, swing = true, spell = true, dot = true, miss = true, pet = true, heal = true },
 	incoming = { damage = false, heals = false },
 	hideBlizzard = true,
+	bgOn = true,
+	bgArt = 0.5,
 }
 
 local function copyDefaults(src, dst)
