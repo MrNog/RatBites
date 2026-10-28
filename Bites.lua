@@ -153,6 +153,47 @@ local function StackLine(key, size)
 	return s.n * (size + 4)
 end
 
+-- Each number moves by WoW's own animation system, so the engine moves it smoothly between frames:
+-- its spot is set once, then animations slide it. Sideways moves at a steady pace while the rise
+-- eases out, which together make the arc. The fade is an animation too; a popping crit's font is
+-- stepped down to its size by the group's OnUpdate (font changes don't move it).
+local START_GAP = 12  -- how far above the plate a number starts
+
+local function Finished(group)
+	local t = group.owner
+	for i = #active, 1, -1 do
+		if active[i] == t then
+			table.remove(active, i)
+			break
+		end
+	end
+	t:Hide()
+	t.plate = nil
+	table.insert(pool, t)
+end
+
+-- the font and icon at size * grow (a popping crit grows for a moment); set only when it changes
+local function Size(t, grow)
+	if grow == t.grown then return end
+	t.grown = grow
+	-- the client draws fonts up to 64 px; past that a glyph would come out blank or blurred
+	t.text:SetFont(ns.FontPath(), math.min(64, math.floor(t.size * grow + 0.5)), t.outline)
+	local icon = SIZE * ns.db.iconScale * ns.db.scale * grow
+	t.icon:SetWidth(icon); t.icon:SetHeight(icon)
+end
+
+local function Popping(group, elapsed)
+	local t = group.owner
+	t.popped = t.popped + elapsed
+	if t.popped >= POP_TIME then
+		Size(t, 1)
+		group:SetScript("OnUpdate", nil)
+		return
+	end
+	-- in steps of a tenth, so the font is set a few times, not every frame
+	Size(t, math.floor((1 + 0.6 * (1 - t.popped / POP_TIME)) * 10 + 0.5) / 10)
+end
+
 local function Acquire()
 	local t = table.remove(pool)
 	if t then return t end
@@ -170,80 +211,71 @@ local function Acquire()
 	t.icon:SetPoint("RIGHT", t.text, "LEFT", -4, 0)
 	t.edge:SetPoint("TOPLEFT", t.icon, "TOPLEFT", -1, 1)
 	t.edge:SetPoint("BOTTOMRIGHT", t.icon, "BOTTOMRIGHT", 1, -1)
+	-- order 1 is the whole path for most animations; Fountain goes up in order 1, down in order 2
+	local g = t:CreateAnimationGroup()
+	g.owner = t
+	g:SetScript("OnFinished", Finished)
+	t.group = g
+	t.x1 = g:CreateAnimation("Translation"); t.x1:SetOrder(1)
+	t.y1 = g:CreateAnimation("Translation"); t.y1:SetOrder(1)
+	t.x2 = g:CreateAnimation("Translation"); t.x2:SetOrder(2)
+	t.y2 = g:CreateAnimation("Translation"); t.y2:SetOrder(2)
+	t.fade = g:CreateAnimation("Alpha")
+	t.fade:SetChange(-1)
 	return t
 end
 
-local function Release(i)
-	local t = table.remove(active, i)
-	t:Hide()
-	t.plate = nil
-	table.insert(pool, t)
+local function Leg(a, x, y, duration, smoothing)
+	a:SetOffset(x, y)
+	a:SetDuration(math.max(0.01, duration))
+	a:SetSmoothing(smoothing)
 end
 
--- Each animation's offset from the start at p (0 to 1 of the number's time). h is the Height setting.
---   arc: rises while it drifts sideways   rise: straight up   stay: holds still, only fades
---   fountain: pops up and falls back past its start   fall: starts h above and drifts down to it
-local function Path(t, p)
-	local h = t.rise
-	if t.anim == "rise" then return 0, h * p end
-	if t.anim == "stay" then return 0, 0 end
-	if t.anim == "fountain" then return t.dx * p, h * (4 * p - 4.6 * p * p) end
-	if t.anim == "fall" then return 0, h * (1 - p) end
-	return t.dx * p, h * p - 20 * p * p
-end
-
--- Text is drawn at its real font size (Text size included) and the frame never scaled: a scaled
--- frame stretches its letters, and stretched letters moving by parts of a pixel shimmer. Every number
--- moves from a fixed spot in UIParent units (for a plate, read when it appears), and its spot is
--- snapped to whole screen pixels each frame, so the letters never sit between two pixels.
-local START_GAP = 12  -- how far above the plate a number starts
-
--- one screen pixel in UIParent units
-local function Pixel()
-	local height = tonumber((GetCVar("gxResolution") or ""):match("%d+x(%d+)")) or 768
-	return 768 / height / UIParent:GetEffectiveScale()
-end
-
-local function Snap(v, px) return math.floor(v / px + 0.5) * px end
-
--- the font and icon at size * grow (a popping crit grows for a moment); set only when it changes
-local function Size(t, grow)
-	if grow == t.grown then return end
-	t.grown = grow
-	-- the client draws fonts up to 64 px; past that a glyph would come out blank or blurred
-	t.text:SetFont(ns.FontPath(), math.min(64, math.floor(t.size * grow + 0.5)), t.outline)
-	local icon = SIZE * ns.db.iconScale * ns.db.scale * grow
-	t.icon:SetWidth(icon); t.icon:SetHeight(icon)
-end
-
-local function Move(t, elapsed)
-	local p = elapsed / t.duration
-	local textScale = ns.db.scale
-	local grow = 1
-	if t.pop and elapsed < POP_TIME then
-		-- in steps of a tenth, so the font is set a few times, not every frame
-		grow = math.floor((1 + 0.5 * (1 - elapsed / POP_TIME)) * 10 + 0.5) / 10
+-- Sets the number's path for its animation (h is the Height setting, dx its sideways drift):
+--   arc: drifts sideways while the rise eases out   rise: straight up   stay: holds, only fades
+--   fountain: up, then back down past its start   fall: starts h above and drifts down to it
+local function Plan(t)
+	local d, h, dx = t.duration, t.rise, t.dx
+	local fadeAt, fadeLen = d * FADE_AT, d * (1 - FADE_AT)
+	if t.anim == "fountain" then
+		local up = d * 0.45
+		Leg(t.x1, dx * 0.45, 0, up, "NONE")
+		Leg(t.y1, 0, h, up, "OUT")
+		Leg(t.x2, dx * 0.55, 0, d - up, "NONE")
+		Leg(t.y2, 0, -h * 1.2, d - up, "IN")
+		t.fade:SetOrder(2)
+		t.fade:SetStartDelay(math.max(0, fadeAt - up))
+	else
+		local x, y, smoothing = dx, h, "OUT"
+		if t.anim == "rise" then x = 0 end
+		if t.anim == "stay" then x, y = 0, 0 end
+		if t.anim == "fall" then x, y, smoothing = 0, -h, "IN_OUT" end
+		Leg(t.x1, x, 0, d, "NONE")
+		Leg(t.y1, 0, y, d, smoothing)
+		Leg(t.x2, 0, 0, 0.01, "NONE")
+		Leg(t.y2, 0, 0, 0.01, "NONE")
+		t.fade:SetOrder(1)
+		t.fade:SetStartDelay(fadeAt)
 	end
-	Size(t, grow)
-	local dx, dy = Path(t, p)
-	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
-	local px = Pixel()
-	t:ClearAllPoints()
-	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", Snap(t.x + dx, px), Snap(t.y + dy, px))
-	t:SetAlpha(p > FADE_AT and 1 - (p - FADE_AT) / (1 - FADE_AT) or 1)
+	t.fade:SetDuration(fadeLen)
 end
 
--- plate: the nameplate to ride (nil: the spot x, y in UIParent units); column: a fixed spot's
--- straight column, which always rises
+-- plate: the nameplate the number starts over (nil: the spot x, y in UIParent units); column: a
+-- fixed spot's straight column, which always rises
 local function Show(plate, name, x, y, label, color, size, icon, pop, column)
-	if #active >= MAX_TEXTS then Release(1) end
+	if #active >= MAX_TEXTS then
+		local oldest = active[1]
+		oldest.group:Stop()
+		Finished(oldest.group)
+	end
 	local t = Acquire()
 	local db = ns.db
+	t.group:Stop()
 	t:SetScale(1)
+	t:SetAlpha(1)
 	-- the real font size, Text size included; every icon has one size (a normal hit's), so crits
 	-- grow only their text
 	t.size, t.outline, t.grown = size * db.scale, color.thick and "THICKOUTLINE" or "OUTLINE", nil
-	Size(t, 1)
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
 	if icon and db.icons then
@@ -253,9 +285,8 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 		t.icon:Hide(); t.edge:Hide()
 	end
 	t.plate, t.name, t.x, t.y = plate, name, x, y
-	-- A number on a plate starts over the plate's top, read once here: from then on it moves on its
-	-- own, since a plate shifts a pixel or two every frame as you or the camera move and a number
-	-- following it would tremble.
+	-- A number on a plate starts over the plate's top, read once here: from then on the animation
+	-- moves it, since a plate shifts a pixel or two every frame as you or the camera move.
 	if plate then
 		local cx, top = plate:GetCenter(), plate:GetTop()
 		if cx and top then
@@ -265,21 +296,32 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	end
 	t.label, t.shield, t.serial = label, nil, ns.NextSerial()
 	ns.lastShown = t
-	t.straight = column
 	t.anim = column and "rise" or db.animation
-	t.pop, t.rise, t.duration = pop, db.height, db.duration
+	t.rise, t.duration = db.height, db.duration
 	t.line = StackLine(plate or format("%d:%d", x, y), size)
-	if t.straight then
+	if column then
 		t.dx = 0
 	else
 		arc = -arc
-		local s = SPREAD[db.spread] or SPREAD.normal
-		t.dx = arc * (s[1] + math.random() * s[2])
+		local sp = SPREAD[db.spread] or SPREAD.normal
+		t.dx = arc * (sp[1] + math.random() * sp[2])
 	end
-	t.start = GetTime()
+	local startY = t.y + (column and 0 or START_GAP) + t.line * db.scale
+	if t.anim == "fall" then startY = startY + t.rise end
+	t:ClearAllPoints()
+	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", math.floor(t.x + 0.5), math.floor(startY + 0.5))
+	if pop then
+		t.popped = 0
+		Size(t, 1.6)
+		t.group:SetScript("OnUpdate", Popping)
+	else
+		Size(t, 1)
+		t.group:SetScript("OnUpdate", nil)
+	end
+	Plan(t)
 	t:Show()
 	table.insert(active, t)
-	Move(t, 0)
+	t.group:Play()
 end
 
 root:SetScript("OnUpdate", function()
@@ -290,11 +332,6 @@ root:SetScript("OnUpdate", function()
 			table.remove(queued, i)
 			q.fn()
 		end
-	end
-	for i = #active, 1, -1 do
-		local t = active[i]
-		local elapsed = now - t.start
-		if elapsed >= t.duration then Release(i) else Move(t, elapsed) end
 	end
 end)
 
@@ -429,8 +466,8 @@ local function Style(who, kind, amount, crit, miss)
 			elseif kind ~= "overheal" then
 				color = COLOR.crit
 			end
-			if db.critStyle == "big" then size = size * 1.5 end
-			if db.critStyle == "pop" then size, pop = size * 1.3, true end
+			if db.critStyle == "big" then size = size * 2 end
+			if db.critStyle == "pop" then size, pop = size * 1.8, true end
 		elseif (kind == "swing" or kind == "spell") and db.bigGold and IsBig(amount) then
 			color, size = COLOR.big, SIZE * 1.15
 		end
@@ -654,7 +691,7 @@ function ns.Test()
 	local db = ns.db
 	local guid, name = UnitGUID("target"), UnitName("target")
 	local plate = guid and ns.PlateFor(guid, name)
-	local critSize = SIZE * (db.critStyle == "big" and 1.5 or db.critStyle == "pop" and 1.3 or 1)
+	local critSize = SIZE * (db.critStyle == "big" and 2 or db.critStyle == "pop" and 1.8 or 1)
 	-- label, colour, size, pop, Where row
 	local hits = {
 		{ "1234", COLOR.normal, SIZE, false, "dmg" },
@@ -682,7 +719,7 @@ local legend
 -- label, colour, sample, size against a normal hit; built on each opening, so it follows the settings
 local function LegendEntries()
 	local db = ns.db
-	local critSize = db.critStyle == "big" and 1.5 or db.critStyle == "pop" and 1.3 or 1
+	local critSize = db.critStyle == "big" and 2 or db.critStyle == "pop" and 1.8 or 1
 	local normal = db.classColorFor == "normal" and ns.classColor or COLOR.normal
 	local crit = db.classColorFor == "crit" and ns.classCrit or COLOR.crit
 	local healCrit = db.classColorFor == "crit" and ns.classCrit or COLOR.healCrit
