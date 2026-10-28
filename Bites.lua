@@ -84,7 +84,7 @@ local arc = 1
 
 -- Numbers that land on the same spot together (a heal and its proc, a multi-hit) would start on top
 -- of each other, so each one within STACK_TIME of the last starts a line higher, up to STACK_MAX.
-local STACK_TIME, STACK_MAX = 0.5, 4
+local STACK_TIME, STACK_MAX = 0.5, 6  -- 6: Holy Light and its glyph's five splashes
 local stacks = {}  -- plate or spot -> { at = time of the last number, n = its line }
 
 local function StackLine(key, size)
