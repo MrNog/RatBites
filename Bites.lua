@@ -273,9 +273,9 @@ local function Who(guid, flags)
 	if band(flags, MINE) ~= 0 and band(flags, PET) ~= 0 then return "pet" end
 end
 
--- Absorb shields you put on someone. The 3.3.5a combat log gives no absorb amount, so they show as a
--- word with the spell's icon, once when the shield goes on (Val'anyr refreshes it on every heal).
--- Matched by name, which covers every rank.
+-- Absorb shields you put on someone, matched by name, which covers every rank. The 3.3.5a combat log
+-- gives no absorb amount; ShieldSize works it out where the game's rules allow, otherwise the shield
+-- shows as the word "Shield" with its icon.
 ns.SHIELDS = {}
 for _, id in ipairs({ 17, 47753, 58597, 64413 }) do  -- Power Word: Shield, Divine Aegis, Sacred Shield, Val'anyr
 	local name = GetSpellInfo(id)
@@ -286,6 +286,26 @@ local HEALING = { heal = true, overheal = true, shield = true }
 -- Val'anyr's shield (Protection of Ancient Kings) has a generic shield icon that reads like another
 -- class's shield, so it shows the mace itself (item 46017, Val'anyr, Hammer of Ancient Kings).
 local ITEM_ICONS = { [64413] = 46017 }
+
+-- Shield sizes from the game's rules: Val'anyr shields for 15% of the heal that made it, Divine Aegis
+-- for 30% of the critical heal, both read from your last heal on that player a moment before (the
+-- shield lands with it). Sacred Shield absorbs 500 plus 75% of your spell power. Power Word: Shield
+-- hangs on talents and glyphs the log can't see, so it stays a word.
+local HEAL_SHARE = { [64413] = 0.15, [47753] = 0.30 }
+local SACRED_SHIELD = 58597
+local lastHeal = {}  -- GUID -> { amount, crit, at } of your last heal on them
+
+local function ShieldSize(id, guid)
+	local share = HEAL_SHARE[id]
+	if share then
+		local h = lastHeal[guid]
+		if h and GetTime() - h.at < 0.5 and h.amount then return math.floor(h.amount * share + 0.5) end
+		return nil
+	end
+	if id == SACRED_SHIELD and GetSpellBonusHealing then
+		return math.floor(500 + 0.75 * GetSpellBonusHealing() + 0.5)
+	end
+end
 local function ShieldIcon(id)
 	local item = ITEM_ICONS[id]
 	if item then
@@ -315,7 +335,7 @@ local function Read(event, ...)
 		-- a heal on someone already full still shows, dimmed, with what it would have healed
 		if healed <= 0 then return "overheal", amount, crit, SpellIcon(id) end
 		return "heal", healed, crit, SpellIcon(id)
-	elseif event == "SPELL_AURA_APPLIED" then
+	elseif event == "SPELL_AURA_APPLIED" or event == "SPELL_AURA_REFRESH" then
 		local id, spellName, _, auraType = ...
 		if auraType == "BUFF" and ns.SHIELDS[spellName] then return "shield", nil, nil, ShieldIcon(id) end
 	elseif event == "SWING_MISSED" then
@@ -335,7 +355,7 @@ local function Style(who, kind, amount, crit, miss)
 		-- DODGE, PARRY, IMMUNE ... are the game's own words for each miss
 		label, color, size = _G[miss] or miss, COLOR.miss, SIZE * 0.8
 	elseif kind == "shield" then
-		label, color, size = "Shield", COLOR.shield, SIZE * 0.85
+		label, color, size = amount and "+" .. Abbrev(amount) or "Shield", COLOR.shield, SIZE * 0.85
 	else
 		label = Abbrev(amount)
 		if kind == "heal" or kind == "overheal" then
@@ -401,7 +421,7 @@ local function Received(kind, amount, crit, icon)
 	end
 	local label, color
 	if kind == "shield" then
-		label, color = "Shield", COLOR.shield
+		label, color = amount and "+" .. Abbrev(amount) or "Shield", COLOR.shield
 	elseif not amount or amount <= 0 then
 		return
 	elseif kind == "overheal" then
@@ -425,8 +445,19 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	local who = Who(sourceGUID, sourceFlags)
 	local toMe = destGUID == ns.playerGUID
 	if not who and not toMe then return end
+	if who and (event == "SPELL_HEAL" or event == "SPELL_PERIODIC_HEAL") then
+		local _, _, _, healed, _, _, healCrit = ...
+		local h = lastHeal[destGUID] or {}
+		h.amount, h.crit, h.at = healed, healCrit, GetTime()
+		lastHeal[destGUID] = h
+	end
 	local kind, amount, crit, icon, miss = Read(event, ...)
 	if not kind then return end
+	if kind == "shield" then
+		amount = ShieldSize((...), destGUID)
+		-- a refresh only shows when it has a size to tell: Val'anyr refreshes on every heal
+		if event == "SPELL_AURA_REFRESH" and not amount then return end
+	end
 	-- output is what you do to others; receiving is everything that lands on you, your own
 	-- self-heals and shields included
 	if toMe then

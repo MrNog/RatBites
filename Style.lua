@@ -90,7 +90,9 @@ function ns.MinusButton(parent)
 	b:SetWidth(24); b:SetHeight(24)
 	local function dress(state, l, r, t, bottom, tex, blend)
 		b["Set" .. state .. "Texture"](b, tex)
+		-- a texture file the client has not seen yet (new since the last restart) makes no texture
 		local x = b["Get" .. state .. "Texture"](b)
+		if not x then return end
 		x:SetTexCoord(l, r, t, bottom)
 		if blend then x:SetBlendMode(blend) end
 	end
