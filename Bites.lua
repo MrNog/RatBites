@@ -198,9 +198,6 @@ end
 -- On a plate the spot is kept up to date while the plate still shows the same name, so a plate that
 -- goes away mid-flight leaves the text where it was.
 local START_GAP = 12  -- how far above the plate a number starts
-local DOT_LINGER = 4  -- sec a DoT's number holds on its plate after a tick
-local DOT_ABOVE = 26  -- how much higher than other numbers a DoT's number holds
-local DOT_SIDE = 40   -- how far left or right of the plate's middle a DoT's number holds
 
 -- What a number starts above: the plate, or with ElvUI's plates the row of your debuffs on it, so
 -- the number doesn't sit on top of the icons.
@@ -209,21 +206,13 @@ local function PlateTop(plate)
 	if debuffs and debuffs:IsShown() and debuffs[1] and debuffs[1]:IsShown() then return debuffs end
 	return plate
 end
--- A number travels its path over its move time and fades over the end of it; a DoT's number then
--- holds at the path's end until its longer time runs out (or the next tick starts it over).
 local function Move(t, elapsed)
-	local p = math.min(1, elapsed / t.moveTime)
-	local fadeLen = t.moveTime * (1 - FADE_AT)
-	local left = t.duration - elapsed
+	local p = elapsed / t.duration
 	local textScale = ns.db.scale
 	local scale = textScale
-	-- a pop runs from the number's start, or from its last DoT tick
-	local since = t.popAt and GetTime() - t.popAt or elapsed
-	if t.pop and since < POP_TIME then scale = scale * (1 + 0.5 * (1 - since / POP_TIME)) end
+	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
 	t:SetScale(scale)
 	local dx, dy = Path(t, p)
-	-- a DoT's slot keeps its side whatever the animation (Rise, Stay and Fall don't drift sideways)
-	if t.slot then dx = t.dx * p end
 	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
 	dx, dy = dx / scale, dy / scale
 	t:ClearAllPoints()
@@ -239,30 +228,14 @@ local function Move(t, elapsed)
 		t.plate = nil
 		t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x / scale + dx, t.y / scale + dy)
 	end
-	t:SetAlpha(left < fadeLen and left / fadeLen or 1)
+	t:SetAlpha(p > FADE_AT and 1 - (p - FADE_AT) / (1 - FADE_AT) or 1)
 end
 
 -- plate: the nameplate to ride (nil: the spot x, y in UIParent units); column: a fixed spot's
--- straight column, which always rises; tick: a DoT tick's amount, so the next tick of the same DoT
--- on the same plate joins this number ("1864 x2") and pops it again instead of making another
-local function Show(plate, name, x, y, label, color, size, icon, pop, column, tick)
-	if tick and plate then
-		for _, t in ipairs(active) do
-			if t.tick and t.plate == plate and t.iconPath == icon and t.color == color then
-				t.count, t.tick = t.count + 1, t.tick + tick
-				t.label = Abbrev(t.tick) .. " x" .. t.count
-				t.text:SetText(t.label)
-				-- it stays where it holds and pops there, its time starting over from the hold
-				t.start, t.duration = GetTime() - t.moveTime, t.moveTime + DOT_LINGER
-				t.pop, t.popAt = true, GetTime()
-				ns.lastShown = t
-				return
-			end
-		end
-	end
+-- straight column, which always rises
+local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	if #active >= MAX_TEXTS then Release(1) end
 	local t = Acquire()
-	t.tick, t.count, t.iconPath, t.color = tick, 1, icon, color
 	local db = ns.db
 	t.text:SetFont(ns.FontPath(), size, color.thick and "THICKOUTLINE" or "OUTLINE")
 	t.text:SetText(label)
@@ -280,14 +253,7 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, ti
 	ns.lastShown = t
 	t.straight = column
 	t.anim = column and "rise" or db.animation
-	t.pop, t.rise, t.duration, t.moveTime = pop, db.height, db.duration, db.duration
-	-- a DoT's number outlives the gap to its next tick (most tick every 3 sec), so the ticks join it
-	-- and it holds above where other numbers end, so a hit landing meanwhile never ends on top of it
-	t.popAt = nil
-	if tick and plate then
-		t.duration = t.moveTime + DOT_LINGER
-		t.rise = db.height + DOT_ABOVE
-	end
+	t.pop, t.rise, t.duration = pop, db.height, db.duration
 	t.line = StackLine(plate or format("%d:%d", x, y), size)
 	if t.straight then
 		t.dx = 0
@@ -295,21 +261,6 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, ti
 		arc = -arc
 		local s = SPREAD[db.spread] or SPREAD.normal
 		t.dx = arc * (s[1] + math.random() * s[2])
-	end
-	-- DoT numbers on one plate hold at the end of their path for seconds, so each takes the first
-	-- slot no other DoT there holds: slots alternate left and right a fixed distance out, two slots
-	-- (one each side) per line, so no two ever end on the same spot
-	t.slot = nil
-	if tick and plate then
-		local used = {}
-		for _, o in ipairs(active) do
-			if o.slot and o.plate == plate then used[o.slot] = true end
-		end
-		local slot = 0
-		while used[slot] do slot = slot + 1 end
-		t.slot = slot
-		t.line = math.floor(slot / 2) * (size + 12)
-		t.dx = (slot % 2 == 0 and -1 or 1) * DOT_SIDE
 	end
 	t.start = GetTime()
 	t:Show()
@@ -480,14 +431,13 @@ end
 -- me (over your character), mine (My box), recv (Received box). Nothing ticked hides that kind.
 --------------------------------------------------------------------------------
 
--- tick: a DoT tick's amount, which joins the same DoT's number on that plate (see Show)
-local function Route(row, plate, name, label, color, size, icon, pop, amount, sign, tick)
+local function Route(row, plate, name, label, color, size, icon, pop, amount, sign)
 	local db = ns.db
 	local r = db.route[row]
 	local onMe = row == "healMe" or row == "dmgMe"
 	-- your own character has no nameplate: for what lands on you, "over the nameplate" is over you
 	if r.plate and plate then
-		Show(plate, name, 0, 0, label, color, size, icon, pop, nil, tick)
+		Show(plate, name, 0, 0, label, color, size, icon, pop)
 	elseif r.plate and not onMe and not r.mine and db.noPlateToBox then
 		-- wanted over a nameplate that isn't on screen (pets, totems, far away): My box instead
 		ns.BoxAdd("mine", label, color, size, icon, amount, sign)
@@ -527,7 +477,7 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 		ns.lastDest, ns.lastDestPlate = name, plate
 	end
 	local label, color, size, pop = Style(who, kind, amount, crit, miss)
-	Route(row, plate, name, label, color, size, icon, pop, amount, heal and "+" or "", kind == "dot" and amount or nil)
+	Route(row, plate, name, label, color, size, icon, pop, amount, heal and "+" or "")
 end
 
 local function Received(kind, amount, crit, icon, word)
