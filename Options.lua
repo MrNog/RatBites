@@ -380,7 +380,8 @@ local function DealsAmount(text)
 		or text:find("%d[%d,]* damage") then
 		return true
 	end
-	if text:find("heal") and (text:find("for %d") or text:find("%d[%d,]* to %d")) then return true end
+	-- a heal "for 4,888 to 5,444" or "heals 1,234"; "healing ... for 20 sec" (a buff's time) is not one
+	if text:find("heal") and (text:find("for %d[%d,]* to %d") or text:find("heals? %d")) then return true end
 	return text:find("absorbs? %d") or text:find("absorbing %d")
 end
 
