@@ -23,9 +23,11 @@ local COLOR = {
 	crit = { 1, 0.45, 0.10 },
 	miss = { 0.9, 0.9, 0.9 },
 	heal = { 0.25, 1, 0.35 },
+	healCrit = { 0.75, 1, 0.15 },
 	overheal = { 0.45, 0.62, 0.45 },
 	shield = { 0.55, 0.82, 1 },
 	taken = { 1, 0.22, 0.18 },
+	takenCrit = { 1, 0.5, 0.15 },
 }
 
 -- The game's four fonts, then every font other addons registered with LibSharedMedia (ElvUI's,
@@ -328,7 +330,11 @@ local function Style(who, kind, amount, crit, miss)
 		end
 		if kind == "dot" then size = SIZE * 0.8 end
 		if crit then
-			if kind ~= "heal" and kind ~= "overheal" then color = COLOR.crit end
+			if kind == "heal" then
+				color = COLOR.healCrit
+			elseif kind ~= "overheal" then
+				color = COLOR.crit
+			end
 			if db.critStyle == "big" then size = size * 1.5 end
 			if db.critStyle == "pop" then size, pop = size * 1.3, true end
 		elseif (kind == "swing" or kind == "spell") and db.bigGold and IsBig(amount) then
@@ -381,10 +387,12 @@ local function Received(kind, amount, crit, icon)
 		label, color = "Shield", COLOR.shield
 	elseif not amount or amount <= 0 then
 		return
-	elseif kind == "heal" or kind == "overheal" then
-		label, color = "+" .. Abbrev(amount), kind == "heal" and COLOR.heal or COLOR.overheal
+	elseif kind == "overheal" then
+		label, color = "+" .. Abbrev(amount), COLOR.overheal
+	elseif kind == "heal" then
+		label, color = "+" .. Abbrev(amount), crit and COLOR.healCrit or COLOR.heal
 	else
-		label, color = "-" .. Abbrev(amount), COLOR.taken
+		label, color = "-" .. Abbrev(amount), crit and COLOR.takenCrit or COLOR.taken
 	end
 	local size = crit and SIZE * 1.2 or SIZE * 0.9
 	ns.BoxAdd("received", label, color, size, icon)
