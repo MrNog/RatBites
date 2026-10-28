@@ -271,3 +271,8 @@ ns.On("PLAYER_LOGIN", function()
 	boxes.mine = Create("mine")
 	boxes.received = Create("received")
 end)
+
+-- boxes left unlocked would cover the fight with their frames and catch clicks: a fight locks them
+ns.On("PLAYER_REGEN_DISABLED", function()
+	if unlocked then ns.SetBoxesUnlocked(false) end
+end)
