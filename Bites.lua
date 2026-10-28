@@ -192,28 +192,44 @@ local function Path(t, p)
 	return t.dx * p, h * p - 20 * p * p
 end
 
--- The path, the start gap and the stack line are screen distances (UIParent units): the text's
--- own offsets are scaled with it, so each is divided by the text's scale, and a bigger text size
--- doesn't send numbers further. The stack line grows with the text, as the lines it keeps apart do.
--- Every number moves from a fixed spot in UIParent units (for a plate, read when it appears).
+-- Text is drawn at its real font size (Text size included) and the frame never scaled: a scaled
+-- frame stretches its letters, and stretched letters moving by parts of a pixel shimmer. Every number
+-- moves from a fixed spot in UIParent units (for a plate, read when it appears), and its spot is
+-- snapped to whole screen pixels each frame, so the letters never sit between two pixels.
 local START_GAP = 12  -- how far above the plate a number starts
+
+-- one screen pixel in UIParent units
+local function Pixel()
+	local height = tonumber((GetCVar("gxResolution") or ""):match("%d+x(%d+)")) or 768
+	return 768 / height / UIParent:GetEffectiveScale()
+end
+
+local function Snap(v, px) return math.floor(v / px + 0.5) * px end
+
+-- the font and icon at size * grow (a popping crit grows for a moment); set only when it changes
+local function Size(t, grow)
+	if grow == t.grown then return end
+	t.grown = grow
+	-- the client draws fonts up to 64 px; past that a glyph would come out blank or blurred
+	t.text:SetFont(ns.FontPath(), math.min(64, math.floor(t.size * grow + 0.5)), t.outline)
+	local icon = SIZE * ns.db.iconScale * ns.db.scale * grow
+	t.icon:SetWidth(icon); t.icon:SetHeight(icon)
+end
 
 local function Move(t, elapsed)
 	local p = elapsed / t.duration
 	local textScale = ns.db.scale
-	local scale = textScale
-	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
-	-- set only when it changes: setting a frame's scale redraws its text, which shimmers if done
-	-- every frame
-	if scale ~= t.scaleNow then
-		t:SetScale(scale)
-		t.scaleNow = scale
+	local grow = 1
+	if t.pop and elapsed < POP_TIME then
+		-- in steps of a tenth, so the font is set a few times, not every frame
+		grow = math.floor((1 + 0.5 * (1 - elapsed / POP_TIME)) * 10 + 0.5) / 10
 	end
+	Size(t, grow)
 	local dx, dy = Path(t, p)
 	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
-	dx, dy = dx / scale, dy / scale
+	local px = Pixel()
 	t:ClearAllPoints()
-	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x / scale + dx, t.y / scale + dy)
+	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", Snap(t.x + dx, px), Snap(t.y + dy, px))
 	t:SetAlpha(p > FADE_AT and 1 - (p - FADE_AT) / (1 - FADE_AT) or 1)
 end
 
@@ -223,13 +239,15 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	if #active >= MAX_TEXTS then Release(1) end
 	local t = Acquire()
 	local db = ns.db
-	t.text:SetFont(ns.FontPath(), size, color.thick and "THICKOUTLINE" or "OUTLINE")
+	t:SetScale(1)
+	-- the real font size, Text size included; every icon has one size (a normal hit's), so crits
+	-- grow only their text
+	t.size, t.outline, t.grown = size * db.scale, color.thick and "THICKOUTLINE" or "OUTLINE", nil
+	Size(t, 1)
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
 	if icon and db.icons then
 		t.icon:SetTexture(icon)
-		-- every icon has one size (a normal hit's), so crits grow only their text
-		t.icon:SetWidth(SIZE * db.iconScale); t.icon:SetHeight(SIZE * db.iconScale)
 		t.icon:Show(); t.edge:Show()
 	else
 		t.icon:Hide(); t.edge:Hide()
