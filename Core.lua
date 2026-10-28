@@ -20,6 +20,7 @@ ns.DEFAULTS = {
 		received = { x = -300, y = -60, w = 200, h = 220 },
 	},
 	scale = 1,
+	iconScale = 1,  -- an icon's size against its number's text
 	font = "friz",
 	icons = true,
 	classColor = false,

@@ -58,7 +58,7 @@ local function Layout(box)
 	local room, offset = box:GetHeight(), 0
 	for i = 1, #box.lines do
 		local line = box.lines[i]
-		local h = line.size + LINE_GAP
+		local h = math.max(line.size, line.size * ns.db.iconScale) + LINE_GAP
 		if offset + h > room then
 			for j = #box.lines, i, -1 do Drop(box, j) end
 			return
@@ -143,7 +143,7 @@ function ns.BoxAdd(key, label, color, size, icon)
 	line.text:SetTextColor(color[1], color[2], color[3])
 	if icon and db.icons then
 		line.icon:SetTexture(icon)
-		line.icon:SetWidth(size); line.icon:SetHeight(size)
+		line.icon:SetWidth(size * db.iconScale); line.icon:SetHeight(size * db.iconScale)
 		line.icon:Show(); line.edge:Show()
 	else
 		line.icon:Hide(); line.edge:Hide()

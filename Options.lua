@@ -186,49 +186,85 @@ function ns.CreateOptions()
 	title:SetText("RatBites")
 	ns.Medallion(panel)
 
-	local fonts = {}
-	for _, f in ipairs(ns.FONTS) do fonts[#fonts + 1] = { f[1], f[2] } end
+	-- every row lives on the body, so minimizing hides them all and leaves the title bar
+	local body = CreateFrame("Frame", nil, panel)
+	body:SetAllPoints(panel)
+	local fullHeight, minimized
+	local MINI_HEIGHT = 36
+
+	-- the minimize button left of the X: a gold minus, a plus while minimized
+	local mini = ns.RedButton(head, "", 20, 20)
+	mini:SetPoint("RIGHT", head.close, "LEFT", -4, 0)
+	local across = mini:CreateTexture(nil, "OVERLAY")
+	across:SetTexture(ns.FLAT); across:SetVertexColor(1, 0.82, 0)
+	across:SetWidth(8); across:SetHeight(2); across:SetPoint("CENTER")
+	local down = mini:CreateTexture(nil, "OVERLAY")
+	down:SetTexture(ns.FLAT); down:SetVertexColor(1, 0.82, 0)
+	down:SetWidth(2); down:SetHeight(8); down:SetPoint("CENTER")
+	down:Hide()
+
+	-- the window keeps its top edge where it is while it shrinks or grows
+	local function SetMinimized(on)
+		minimized = on
+		local left, top = panel:GetLeft(), panel:GetTop()
+		if left and top then
+			panel:ClearAllPoints()
+			panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+		end
+		ns.CloseDropdowns()
+		if on then body:Hide(); down:Show() else body:Show(); down:Hide() end
+		panel:SetHeight(on and MINI_HEIGHT or fullHeight)
+		for _, fn in ipairs(refreshers) do fn() end
+	end
+	mini:SetScript("OnClick", function() SetMinimized(not minimized) end)
+
+	local fonts = ns.FontList()
 
 	-- left column: where the numbers show and how they look
 	colX = MARGIN
 	local y = -58
-	y = Section(panel, y, "General")
-	y = Check(panel, y, "Enabled",
+	y = Section(body, y, "General")
+	y = Check(body, y, "Enabled",
 		function() return db.enabled end, function(v) db.enabled = v end)
-	y = Choice(panel, y, "Show on",
+	y = Action(body, y, "Test numbers",
+		function() ns.SetTestLoop(not ns.TestLooping()) end,
+		function() return ns.TestLooping() and "Stop" or "Start" end)
+	y = Choice(body, y, "Show on",
 		{ { "plates", "Nameplates" }, { "target", "Target only" }, { "screen", "Center screen" }, { "box", "My box" } },
 		function() return db.anchor end, function(v) db.anchor = v end)
-	y = Choice(panel, y, "Received shows on",
+	y = Choice(body, y, "Received shows on",
 		{ { "box", "Received box" }, { "floating", "Floating" } },
 		function() return db.receivedOn end, function(v) db.receivedOn = v end)
-	y = Stepper(panel, y, "Size", 0.5, 2, 0.1, function(v) return format("%d%%", v * 100 + 0.5) end,
+	y = Stepper(body, y, "Text size", 0.5, 2, 0.1, function(v) return format("%d%%", v * 100 + 0.5) end,
 		function() return db.scale end, function(v) db.scale = v end)
-	y = Choice(panel, y, "Font", fonts,
+	y = Stepper(body, y, "Icon size", 0.5, 2, 0.1, function(v) return format("%d%%", v * 100 + 0.5) end,
+		function() return db.iconScale end, function(v) db.iconScale = v end)
+	y = Choice(body, y, "Font", fonts,
 		function() return db.font end, function(v) db.font = v end)
 
-	y = Section(panel, y - 10, "Motion")
-	y = Choice(panel, y, "Animation",
+	y = Section(body, y - 10, "Motion")
+	y = Choice(body, y, "Animation",
 		{ { "arc", "Arc" }, { "rise", "Rise" }, { "stay", "Stay" }, { "fountain", "Fountain" }, { "fall", "Fall" } },
 		function() return db.animation end, function(v) db.animation = v end)
-	y = Choice(panel, y, "Spread",
+	y = Choice(body, y, "Spread",
 		{ { "none", "None" }, { "tight", "Tight" }, { "normal", "Normal" }, { "wide", "Wide" } },
 		function() return db.spread end, function(v) db.spread = v end)
-	y = Stepper(panel, y, "Height", 20, 150, 10, function(v) return format("%d", v) end,
+	y = Stepper(body, y, "Height", 20, 150, 10, function(v) return format("%d", v) end,
 		function() return db.height end, function(v) db.height = v end)
-	y = Stepper(panel, y, "Duration", 0.8, 4, 0.1, function(v) return format("%.1fs", v) end,
+	y = Stepper(body, y, "Duration", 0.8, 4, 0.1, function(v) return format("%.1fs", v) end,
 		function() return db.duration end, function(v) db.duration = v end)
 
-	y = Section(panel, y - 10, "Look")
-	y = Check(panel, y, "Spell icons",
+	y = Section(body, y - 10, "Look")
+	y = Check(body, y, "Spell icons",
 		function() return db.icons end, function(v) db.icons = v end)
-	y = Check(panel, y, "Class-colored damage",
+	y = Check(body, y, "Class-colored damage",
 		function() return db.classColor end, function(v) db.classColor = v end)
-	y = Check(panel, y, "Big hits in gold",
+	y = Check(body, y, "Big hits in gold",
 		function() return db.bigGold end, function(v) db.bigGold = v end)
-	y = Choice(panel, y, "Crit style",
+	y = Choice(body, y, "Crit style",
 		{ { "pop", "Pop" }, { "big", "Bigger" }, { "plain", "Plain" } },
 		function() return db.critStyle end, function(v) db.critStyle = v end)
-	y = Choice(panel, y, "Short numbers",
+	y = Choice(body, y, "Short numbers",
 		{ { "short", "12.4k" }, { "full", "12,431" }, { "raw", "12431" } },
 		function() return db.numbers end, function(v) db.numbers = v end)
 	local leftEnd = y
@@ -240,44 +276,52 @@ function ns.CreateOptions()
 	end
 	colX = MARGIN + COL_W + COL_GAP
 	y = -58
-	y = Section(panel, y, "Show")
-	y = Check(panel, y, "Normal hits", flag(show, "normal"))
-	y = Check(panel, y, "Critical hits", flag(show, "crit"))
-	y = Check(panel, y, "Auto-attacks", flag(show, "swing"))
-	y = Check(panel, y, "Abilities / spells", flag(show, "spell"))
-	y = Check(panel, y, "Damage over time", flag(show, "dot"))
-	y = Check(panel, y, "Heals", flag(show, "heal"))
-	y = Check(panel, y, "Misses / avoidance", flag(show, "miss"))
-	y = Check(panel, y, "Pet damage", flag(show, "pet"))
+	y = Section(body, y, "Show")
+	y = Check(body, y, "Normal hits", flag(show, "normal"))
+	y = Check(body, y, "Critical hits", flag(show, "crit"))
+	y = Check(body, y, "Auto-attacks", flag(show, "swing"))
+	y = Check(body, y, "Abilities / spells", flag(show, "spell"))
+	y = Check(body, y, "Damage over time", flag(show, "dot"))
+	y = Check(body, y, "Heals", flag(show, "heal"))
+	y = Check(body, y, "Misses / avoidance", flag(show, "miss"))
+	y = Check(body, y, "Pet damage", flag(show, "pet"))
 
-	y = Section(panel, y - 10, "Received")
-	y = Check(panel, y, "Damage taken", flag(inc, "damage"))
-	y = Check(panel, y, "Heals", flag(inc, "heals"))
-	y = Check(panel, y, "Hide Blizzard text", flag(db, "hideBlizzard"))
+	y = Section(body, y - 10, "Received")
+	y = Check(body, y, "Damage taken", flag(inc, "damage"))
+	y = Check(body, y, "Heals", flag(inc, "heals"))
+	y = Check(body, y, "Hide Blizzard text", flag(db, "hideBlizzard"))
 
-	y = Section(panel, y - 10, "Boxes")
-	y = Choice(panel, y, "Scroll",
+	y = Section(body, y - 10, "Boxes")
+	y = Choice(body, y, "Scroll",
 		{ { "up", "Up" }, { "down", "Down" } },
 		function() return db.boxScroll end, function(v) db.boxScroll = v end)
-	y = Stepper(panel, y, "Line time", 2, 10, 1, function(v) return format("%ds", v) end,
+	y = Stepper(body, y, "Line time", 2, 10, 1, function(v) return format("%ds", v) end,
 		function() return db.boxTime end, function(v) db.boxTime = v end)
-	y = Action(panel, y, "Move boxes",
+	y = Action(body, y, "Move boxes",
 		function() ns.SetBoxesUnlocked(not ns.BoxesUnlocked()) end,
 		function() return ns.BoxesUnlocked() and "Lock" or "Unlock" end)
 
-	y = Section(panel, y - 10, "Window")
-	y = Check(panel, y, "Minimap button", flag(db, "minimapButton"))
-	y = Check(panel, y, "Background art", flag(db, "bgOn"))
-	y = Stepper(panel, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end,
+	y = Section(body, y - 10, "Window")
+	y = Check(body, y, "Minimap button", flag(db, "minimapButton"))
+	y = Check(body, y, "Background art", flag(db, "bgOn"))
+	y = Stepper(body, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end,
 		function() return db.bgArt end, function(v) db.bgArt = v end)
 
-	panel:SetHeight(-math.min(y, leftEnd) + 16)
-	refreshers[#refreshers + 1] = function() PaintArt(art, wash, panel:GetWidth(), panel:GetHeight()) end
+	fullHeight = -math.min(y, leftEnd) + 16
+	panel:SetHeight(fullHeight)
+	refreshers[#refreshers + 1] = function()
+		if minimized then
+			art:Hide(); wash:Hide()
+		else
+			PaintArt(art, wash, panel:GetWidth(), panel:GetHeight())
+		end
+	end
 	panel:SetScript("OnShow", function() for _, fn in ipairs(refreshers) do fn() end end)
 	panel:SetScript("OnHide", function()
 		ns.CloseDropdowns()
 		-- boxes left unlocked would keep catching clicks meant for the game
 		ns.SetBoxesUnlocked(false)
+		ns.SetTestLoop(false)
 	end)
 end
 

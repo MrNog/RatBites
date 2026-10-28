@@ -279,6 +279,7 @@ local LIST_BACKDROP = {
 	insets = { left = 5, right = 5, top = 5, bottom = 5 },
 }
 local ROW_H, INSET_X, INSET_Y, CHECK_W = 21, 12, 10, 16
+local MAX_ROWS = 14
 
 local openList -- the one list open at a time
 
@@ -338,8 +339,19 @@ function ns.Dropdown(parent, width, values, get, set)
 	fill:SetPoint("BOTTOMRIGHT", -4, 4)
 	list:Hide()
 	b.list = list
-	local rows, widest = {}, 0
-	for i, pair in ipairs(values) do
+	-- A long list (every font other addons registered) shows MAX_ROWS rows at a time and scrolls with
+	-- the mouse wheel: the rows stay put and take the values from `first` on.
+	local shown = math.min(#values, MAX_ROWS)
+	local rows, widest, first = {}, 0, 1
+	local function fill()
+		for i, row in ipairs(rows) do
+			local pair = values[first + i - 1]
+			row.key = pair[1]
+			row.text:SetText(pair[2])
+			if pair[1] == get() then row.check:Show() else row.check:Hide() end
+		end
+	end
+	for i = 1, shown do
 		local row = CreateFrame("Button", nil, list)
 		row:SetHeight(ROW_H)
 		row:SetPoint("TOPLEFT", list, "TOPLEFT", INSET_X, -INSET_Y - (i - 1) * ROW_H)
@@ -352,20 +364,26 @@ function ns.Dropdown(parent, width, values, get, set)
 		row.check:SetTexture([[Interface\Buttons\UI-CheckBox-Check]])
 		row.check:SetWidth(CHECK_W); row.check:SetHeight(CHECK_W)
 		row.check:SetPoint("LEFT", row, "LEFT", 0, 0)
-		local text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-		text:SetPoint("LEFT", row, "LEFT", CHECK_W + 2, 0)
-		text:SetText(pair[2])
-		widest = math.max(widest, text:GetStringWidth())
-		row:SetScript("OnClick", function()
+		row.text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+		row.text:SetPoint("LEFT", row, "LEFT", CHECK_W + 2, 0)
+		row:SetScript("OnClick", function(self)
 			PlaySound("igMainMenuOptionCheckBoxOn")
 			closeList()
-			set(pair[1])
+			set(self.key)
 		end)
-		row.key = pair[1]
 		rows[i] = row
 	end
+	for _, pair in ipairs(values) do
+		rows[1].text:SetText(pair[2])
+		widest = math.max(widest, rows[1].text:GetStringWidth())
+	end
 	list:SetWidth(math.max(width + 4, widest + CHECK_W + 2 + INSET_X * 2 + 8))
-	list:SetHeight(#values * ROW_H + INSET_Y * 2)
+	list:SetHeight(shown * ROW_H + INSET_Y * 2)
+	list:EnableMouseWheel(true)
+	list:SetScript("OnMouseWheel", function(_, delta)
+		first = math.max(1, math.min(#values - shown + 1, first - delta * 3))
+		fill()
+	end)
 	list:SetScript("OnShow", function() syncArrow(b) end)
 	list:SetScript("OnHide", function() syncArrow(b) end)
 
@@ -379,9 +397,12 @@ function ns.Dropdown(parent, width, values, get, set)
 			return
 		end
 		closeList()
-		for _, row in ipairs(rows) do
-			if row.key == get() then row.check:Show() else row.check:Hide() end
+		-- open scrolled to the current choice
+		first = 1
+		for i, pair in ipairs(values) do
+			if pair[1] == get() then first = math.max(1, math.min(#values - shown + 1, i - 2)) end
 		end
+		fill()
 		PlaySound("igMainMenuOptionCheckBoxOn")
 		list:Show()
 		openList = list

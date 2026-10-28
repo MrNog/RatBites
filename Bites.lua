@@ -28,9 +28,35 @@ local COLOR = {
 	taken = { 1, 0.22, 0.18 },
 }
 
+-- The game's four fonts, then every font other addons registered with LibSharedMedia (ElvUI's,
+-- SharedMedia packs), keyed "lsm:<name>". Read when the settings window is built, after they loaded.
+function ns.FontList()
+	local list = {}
+	for _, f in ipairs(ns.FONTS) do list[#list + 1] = { f[1], f[2] } end
+	local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
+	if LSM then
+		for _, name in ipairs(LSM:List("font")) do
+			local path = LSM:Fetch("font", name)
+			local builtIn = false
+			for _, f in ipairs(ns.FONTS) do
+				if f[3]:lower() == (path or ""):lower() then builtIn = true end
+			end
+			if not builtIn then list[#list + 1] = { "lsm:" .. name, name } end
+		end
+	end
+	return list
+end
+
 function ns.FontPath()
+	local key = ns.db.font
+	local name = key:match("^lsm:(.+)")
+	if name then
+		local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
+		local path = LSM and LSM:Fetch("font", name, true)
+		if path then return path end
+	end
 	for _, f in ipairs(ns.FONTS) do
-		if f[1] == ns.db.font then return f[3] end
+		if f[1] == key then return f[3] end
 	end
 	return STANDARD_TEXT_FONT
 end
@@ -178,7 +204,7 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t.text:SetTextColor(color[1], color[2], color[3])
 	if icon and db.icons then
 		t.icon:SetTexture(icon)
-		t.icon:SetWidth(size); t.icon:SetHeight(size)
+		t.icon:SetWidth(size * db.iconScale); t.icon:SetHeight(size * db.iconScale)
 		t.icon:Show(); t.edge:Show()
 	else
 		t.icon:Hide(); t.edge:Hide()
@@ -390,6 +416,28 @@ ns.On("PLAYER_LOGIN", function()
 	local c = RAID_CLASS_COLORS[select(2, UnitClass("player"))]
 	if c then ns.classColor = { c.r, c.g, c.b } end
 end)
+
+--------------------------------------------------------------------------------
+-- the Test button: a round of samples every 2 sec until it is turned off, to watch a change land
+--------------------------------------------------------------------------------
+
+local loop = CreateFrame("Frame")
+loop:Hide()
+local wait = 0
+loop:SetScript("OnUpdate", function(_, elapsed)
+	wait = wait - elapsed
+	if wait <= 0 then
+		wait = 2
+		ns.Test()
+	end
+end)
+
+function ns.TestLooping() return loop:IsShown() end
+
+function ns.SetTestLoop(on)
+	wait = 0
+	if on then loop:Show() else loop:Hide() end
+end
 
 --------------------------------------------------------------------------------
 -- /bites test: one of each kind where your settings send it
