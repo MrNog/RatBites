@@ -14,7 +14,7 @@ ns.DEFAULTS = {
 	duration = 1.5,
 	boxScroll = "up",
 	boxAlign = "left",
-	boxMerge = 0.5,  -- sec: the same spell again within this joins its line as a total with "xN"
+	boxMerge = 3,  -- sec: the same spell again within this joins its line as a total with "xN"
 	boxTime = 5,
 	boxes = {
 		mine = { x = 300, y = -60, w = 200, h = 220 },

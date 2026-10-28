@@ -157,14 +157,17 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	local box = boxes[key]
 	if not box then return end
 	local db = ns.db
-	-- The same spell landing again within the merge time in the same colour (an AoE on five mobs, a
-	-- glyph's five splashes, a proc on every swing) joins its line as one total with "x5", as xCT
-	-- does, wherever that line is, so repeats can't push other lines out of the box.
+	-- The same spell landing again within the merge time (an AoE on five mobs, a glyph's five
+	-- splashes, a proc on every swing) joins its line as one total with "x5", as xCT does, wherever
+	-- that line is, so repeats can't push other lines out of the box.
 	local last
 	local window = db.boxMerge
 	if icon and window > 0 then
 		for _, line in ipairs(box.lines) do
-			if line.iconPath == icon and line.color == color and GetTime() - line.first < window then
+			-- numbers of one kind (sign: damage "", heals "+", taken "-") add up whatever their colour,
+			-- crits included; a word only joins the same word
+			local same = line.sign == sign and (amount and line.total or (not amount and line.label == label))
+			if line.iconPath == icon and same and GetTime() - line.first < window then
 				last = line
 				break
 			end
