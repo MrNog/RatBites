@@ -83,6 +83,24 @@ function ns.CloseButton(parent)
 	return b
 end
 
+-- the minimize button: the X's red plate with a gold minus, in the same three states, from its own
+-- sheet; the highlight is the X's
+function ns.MinusButton(parent)
+	local b = CreateFrame("Button", nil, parent)
+	b:SetWidth(24); b:SetHeight(24)
+	local function dress(state, l, r, t, bottom, tex, blend)
+		b["Set" .. state .. "Texture"](b, tex)
+		local x = b["Get" .. state .. "Texture"](b)
+		x:SetTexCoord(l, r, t, bottom)
+		if blend then x:SetBlendMode(blend) end
+	end
+	dress("Normal", 0, 36 / 128, 0, 38 / 64, UI .. "minus")
+	dress("Pushed", 40 / 128, 76 / 128, 0, 38 / 64, UI .. "minus")
+	dress("Disabled", 80 / 128, 116 / 128, 0, 38 / 64, UI .. "minus")
+	dress("Highlight", 115 / 256, 151 / 256, 1 / 128, 39 / 128, UI .. "redbutton2x", "ADD")
+	return b
+end
+
 -- a text button drawn to match the X: silver octagon frame, thin black line, red body. A three-slice
 -- whose caps keep the frame's corners at any width.
 local PLATE_W, PLATE_H, CAP_W = 128, 64, 32

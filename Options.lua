@@ -396,12 +396,10 @@ function ns.CreateOptions()
 		if dot:IsShown() then Restore() return true end
 	end
 
-	-- the minimize button left of the X, the X's size, with a gold minus
-	local mini = ns.RedButton(head, "", head.close:GetWidth(), head.close:GetHeight())
+	-- the minimize button left of the X, at the X's size
+	local mini = ns.MinusButton(head)
+	mini:SetWidth(head.close:GetWidth()); mini:SetHeight(head.close:GetHeight())
 	mini:SetPoint("RIGHT", head.close, "LEFT", -4, 0)
-	local bar = mini:CreateTexture(nil, "OVERLAY")
-	bar:SetTexture(ns.FLAT); bar:SetVertexColor(1, 0.82, 0)
-	bar:SetWidth(10); bar:SetHeight(3); bar:SetPoint("CENTER")
 	mini:SetScript("OnClick", Minimize)
 
 	panel:SetHeight(-lowest + 24)
