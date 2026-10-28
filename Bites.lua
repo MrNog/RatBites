@@ -274,7 +274,11 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t.frameScale = want / fontPx
 	t:SetScale(t.frameScale)
 	-- a new font string takes no text before it has a font
-	t.text:SetFont(ns.FontPath(), fontPx, color.thick and "THICKOUTLINE" or "OUTLINE")
+	-- A scaled-up number scales its outline and shadow too: past the font limit the thick outline
+	-- turns into a fat black edge, so it takes the thin one, and the shadow keeps one screen pixel.
+	local thick = color.thick and t.frameScale < 1.2
+	t.text:SetFont(ns.FontPath(), fontPx, thick and "THICKOUTLINE" or "OUTLINE")
+	t.text:SetShadowOffset(1 / t.frameScale, -1 / t.frameScale)
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
 	local iconSize = SIZE * db.iconScale * db.scale / t.frameScale
