@@ -83,6 +83,9 @@ root:SetFrameStrata("LOW")
 local pool, active, queued = {}, {}, {}
 local arc = 1
 
+-- how far a number drifts sideways while it rises: at least [1], plus up to [2] more at random
+local SPREAD = { none = { 0, 0 }, tight = { 8, 8 }, normal = { 15, 15 }, wide = { 35, 30 } }
+
 -- Numbers that land on the same spot together (a heal and its proc, a multi-hit) would start on top
 -- of each other, so each one within STACK_TIME of the last starts a line higher, up to STACK_MAX.
 local STACK_TIME, STACK_MAX = 0.5, 6  -- 6: Holy Light and its glyph's five splashes
@@ -188,7 +191,8 @@ local function Show(where, x, y, label, color, size, icon, pop, straight, rise)
 		t.dx = 0
 	else
 		arc = -arc
-		t.dx = arc * (15 + math.random() * 15)
+		local s = SPREAD[ns.db.spread] or SPREAD.normal
+		t.dx = arc * (s[1] + math.random() * s[2])
 	end
 	t.start = GetTime()
 	t:Show()

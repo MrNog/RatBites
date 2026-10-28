@@ -172,6 +172,9 @@ function ns.CreateOptions()
 	y = Choice(panel, y, "Crit style",
 		{ { "pop", "Pop" }, { "big", "Bigger" }, { "plain", "Plain" } },
 		function() return db.critStyle end, function(v) db.critStyle = v end)
+	y = Choice(panel, y, "Spread",
+		{ { "none", "None" }, { "tight", "Tight" }, { "normal", "Normal" }, { "wide", "Wide" } },
+		function() return db.spread end, function(v) db.spread = v end)
 	y = Choice(panel, y, "Short numbers",
 		{ { "short", "12.4k" }, { "full", "12,431" }, { "raw", "12431" } },
 		function() return db.numbers end, function(v) db.numbers = v end)

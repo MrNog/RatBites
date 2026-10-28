@@ -15,6 +15,7 @@ ns.DEFAULTS = {
 	classColor = false,
 	bigGold = true,
 	critStyle = "pop",
+	spread = "normal",
 	numbers = "short",
 	show = { normal = true, crit = true, swing = true, spell = true, dot = true, miss = true, pet = true, heal = true },
 	incoming = { damage = false, heals = false },
