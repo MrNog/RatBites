@@ -365,18 +365,46 @@ local function Confirm(question, yes, onYes)
 	confirm:Show()
 end
 
--- Your spells in a grid two wide that scrolls with the mouse wheel: every spell in your spellbook
--- (its class tabs; the General tab and passives left out), plus the hidden effects RatBites has
+-- Your spells in a grid two wide that scrolls with the mouse wheel: the spellbook spells that make
+-- numbers (class tabs only, no passives), plus the hidden effects RatBites has
 -- seen from you (Judgement of Light heals, glyph splashes, beacon copies). A tick shows a spell,
 -- untick it to hide it. The grid is read again each time the window refreshes.
 local SPELL_LINES, SPELL_COLS = 12, 2
+
+-- Only spells that make numbers: their tooltip speaks of damage, healing or absorbing (auras,
+-- utility and travel spells don't). Read through a hidden tooltip, once per spell name.
+local scanTip, makesNumbers = nil, {}
+local function MakesNumbers(i, name)
+	if makesNumbers[name] ~= nil then return makesNumbers[name] end
+	if not scanTip then
+		scanTip = CreateFrame("GameTooltip", "RatBitesScanTip", nil, "GameTooltipTemplate")
+	end
+	scanTip:SetOwner(WorldFrame, "ANCHOR_NONE")
+	scanTip:ClearLines()
+	scanTip:SetSpell(i, BOOKTYPE_SPELL)
+	local found = false
+	for line = 1, scanTip:NumLines() do
+		local fs = _G["RatBitesScanTipTextLeft" .. line]
+		local text = fs and fs:GetText()
+		if text then
+			text = text:lower()
+			if text:find("damage") or text:find("heal") or text:find("absorb") then
+				found = true
+				break
+			end
+		end
+	end
+	scanTip:Hide()
+	makesNumbers[name] = found
+	return found
+end
 
 local function Spellbook(into)
 	for tab = 2, GetNumSpellTabs() do
 		local _, _, offset, count = GetSpellTabInfo(tab)
 		for i = offset + 1, offset + count do
 			local name = GetSpellName(i, BOOKTYPE_SPELL)
-			if name and not IsPassiveSpell(i, BOOKTYPE_SPELL) and not into[name] then
+			if name and not IsPassiveSpell(i, BOOKTYPE_SPELL) and not into[name] and MakesNumbers(i, name) then
 				into[name] = GetSpellTexture(i, BOOKTYPE_SPELL) or true
 			end
 		end
