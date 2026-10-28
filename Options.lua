@@ -18,6 +18,7 @@ local function Changed()
 	for _, fn in ipairs(refreshers) do fn() end
 	ns.ApplyBlizzardText()
 	ns.RelayoutBoxes()
+	ns.UpdateMinimapButton()
 end
 
 -- plain text, no drop shadow (the shadow made small text look bold)
@@ -268,6 +269,7 @@ function ns.CreateOptions()
 		function() return ns.BoxesUnlocked() and "Lock" or "Unlock" end)
 
 	y = Section(panel, y - 10, "Window")
+	y = Check(panel, y, "Minimap button", flag(db, "minimapButton"))
 	y = Check(panel, y, "Background art", flag(db, "bgOn"))
 	y = Stepper(panel, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end,
 		function() return db.bgArt end, function(v) db.bgArt = v end)

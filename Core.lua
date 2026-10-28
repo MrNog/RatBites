@@ -35,6 +35,8 @@ ns.DEFAULTS = {
 	hideBlizzard = true,
 	bgOn = true,
 	bgArt = 0.5,
+	minimapButton = true,
+	minimapAngle = 220,
 }
 
 local function copyDefaults(src, dst)

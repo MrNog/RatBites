@@ -12,3 +12,4 @@ Frames.lua
 Bites.lua
 Boxes.lua
 Options.lua
+Minimap.lua
