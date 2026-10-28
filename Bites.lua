@@ -466,8 +466,8 @@ local function Style(who, kind, amount, crit, miss)
 			elseif kind ~= "overheal" then
 				color = COLOR.crit
 			end
-			if db.critStyle == "big" then size = size * 2 end
-			if db.critStyle == "pop" then size, pop = size * 1.8, true end
+			if db.critStyle == "big" then size = size * 2.7 end
+			if db.critStyle == "pop" then size, pop = size * 2.7, true end
 		elseif (kind == "swing" or kind == "spell") and db.bigGold and IsBig(amount) then
 			color, size = COLOR.big, SIZE * 1.15
 		end
@@ -691,7 +691,7 @@ function ns.Test()
 	local db = ns.db
 	local guid, name = UnitGUID("target"), UnitName("target")
 	local plate = guid and ns.PlateFor(guid, name)
-	local critSize = SIZE * (db.critStyle == "big" and 2 or db.critStyle == "pop" and 1.8 or 1)
+	local critSize = SIZE * (db.critStyle == "big" and 2.7 or db.critStyle == "pop" and 2.7 or 1)
 	-- label, colour, size, pop, Where row
 	local hits = {
 		{ "1234", COLOR.normal, SIZE, false, "dmg" },
@@ -719,7 +719,7 @@ local legend
 -- label, colour, sample, size against a normal hit; built on each opening, so it follows the settings
 local function LegendEntries()
 	local db = ns.db
-	local critSize = db.critStyle == "big" and 2 or db.critStyle == "pop" and 1.8 or 1
+	local critSize = db.critStyle == "big" and 2.7 or db.critStyle == "pop" and 2.7 or 1
 	local normal = db.classColorFor == "normal" and ns.classColor or COLOR.normal
 	local crit = db.classColorFor == "crit" and ns.classCrit or COLOR.crit
 	local healCrit = db.classColorFor == "crit" and ns.classCrit or COLOR.healCrit
