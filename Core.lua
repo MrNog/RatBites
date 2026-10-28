@@ -164,18 +164,25 @@ function ns.SetProfile(name)
 	ns.UseProfile()
 end
 
+-- both say in chat what they did: on the Profiles tab nothing else shows the change
 function ns.CopyProfile(from)
 	local name = ns.ActiveProfile()
-	if from == name then return end
+	if from == name then
+		ns.Print("You are already using " .. name .. ": pick another profile to copy from.")
+		return
+	end
 	RatBitesDB.profiles[name] = deepCopy(Profile(from))
 	ns.db = nil
 	ns.UseProfile()
+	ns.Print("Copied " .. from .. "'s settings into " .. name .. ".")
 end
 
 function ns.ResetProfile()
-	RatBitesDB.profiles[ns.ActiveProfile()] = nil
+	local name = ns.ActiveProfile()
+	RatBitesDB.profiles[name] = nil
 	ns.db = nil
 	ns.UseProfile()
+	ns.Print(name .. " is back to the default settings.")
 end
 
 --------------------------------------------------------------------------------
