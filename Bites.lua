@@ -5,7 +5,6 @@ local ADDON, ns = ...
 -- of the boxes (Boxes.lua) as a line.
 
 local FADE_AT = 0.65      -- share of a number's time before its fade starts
-local POP_TIME = 0.15     -- a popping crit shrinks to its size over this long
 local SIZE = 20           -- a normal hit's font size at scale 1, and every icon's size
 ns.SIZE = SIZE
 local MAX_TEXTS = 40
@@ -155,9 +154,14 @@ end
 
 -- Each number moves by WoW's own animation system, so the engine moves it smoothly between frames:
 -- its spot is set once, then animations slide it. Sideways moves at a steady pace while the rise
--- eases out, which together make the arc. The fade is an animation too; a popping crit's font is
--- stepped down to its size by the group's OnUpdate (font changes don't move it).
+-- eases out, which together make the arc; the fade is an animation too.
+-- The client draws fonts up to 64 px, so a number bigger than that (a 2.7x crit) is drawn at 64 and
+-- its frame scaled up the rest; the frame's offsets are scaled with it, so they are divided back.
+-- A popping crit lands like a bomb: a Scale animation makes it BOMB times bigger at once, the next
+-- shrinks it smoothly back over BOMB_TIME, and only then does its path start.
 local START_GAP = 12  -- how far above the plate a number starts
+local FONT_MAX = 64
+local BOMB, BOMB_TIME = 1.7, 0.12
 
 local function Finished(group)
 	local t = group.owner
@@ -170,28 +174,6 @@ local function Finished(group)
 	t:Hide()
 	t.plate = nil
 	table.insert(pool, t)
-end
-
--- the font and icon at size * grow (a popping crit grows for a moment); set only when it changes
-local function Size(t, grow)
-	if grow == t.grown then return end
-	t.grown = grow
-	-- the client draws fonts up to 64 px; past that a glyph would come out blank or blurred
-	t.text:SetFont(ns.FontPath(), math.min(64, math.floor(t.size * grow + 0.5)), t.outline)
-	local icon = SIZE * ns.db.iconScale * ns.db.scale * grow
-	t.icon:SetWidth(icon); t.icon:SetHeight(icon)
-end
-
-local function Popping(group, elapsed)
-	local t = group.owner
-	t.popped = t.popped + elapsed
-	if t.popped >= POP_TIME then
-		Size(t, 1)
-		group:SetScript("OnUpdate", nil)
-		return
-	end
-	-- in steps of a tenth, so the font is set a few times, not every frame
-	Size(t, math.floor((1 + 0.6 * (1 - t.popped / POP_TIME)) * 10 + 0.5) / 10)
 end
 
 local function Acquire()
@@ -211,15 +193,17 @@ local function Acquire()
 	t.icon:SetPoint("RIGHT", t.text, "LEFT", -4, 0)
 	t.edge:SetPoint("TOPLEFT", t.icon, "TOPLEFT", -1, 1)
 	t.edge:SetPoint("BOTTOMRIGHT", t.icon, "BOTTOMRIGHT", 1, -1)
-	-- order 1 is the whole path for most animations; Fountain goes up in order 1, down in order 2
+	-- orders: 1 the bomb's grow, 2 its shrink, 3 the path (Fountain: 3 up, 4 down)
 	local g = t:CreateAnimationGroup()
 	g.owner = t
 	g:SetScript("OnFinished", Finished)
 	t.group = g
-	t.x1 = g:CreateAnimation("Translation"); t.x1:SetOrder(1)
-	t.y1 = g:CreateAnimation("Translation"); t.y1:SetOrder(1)
-	t.x2 = g:CreateAnimation("Translation"); t.x2:SetOrder(2)
-	t.y2 = g:CreateAnimation("Translation"); t.y2:SetOrder(2)
+	t.grow = g:CreateAnimation("Scale"); t.grow:SetOrder(1); t.grow:SetOrigin("CENTER", 0, 0)
+	t.shrink = g:CreateAnimation("Scale"); t.shrink:SetOrder(2); t.shrink:SetOrigin("CENTER", 0, 0)
+	t.x1 = g:CreateAnimation("Translation"); t.x1:SetOrder(3)
+	t.y1 = g:CreateAnimation("Translation"); t.y1:SetOrder(3)
+	t.x2 = g:CreateAnimation("Translation"); t.x2:SetOrder(4)
+	t.y2 = g:CreateAnimation("Translation"); t.y2:SetOrder(4)
 	t.fade = g:CreateAnimation("Alpha")
 	t.fade:SetChange(-1)
 	return t
@@ -231,11 +215,20 @@ local function Leg(a, x, y, duration, smoothing)
 	a:SetSmoothing(smoothing)
 end
 
--- Sets the number's path for its animation (h is the Height setting, dx its sideways drift):
+-- Sets the number's bomb (popping crits) and path (h is the Height setting, dx its sideways drift),
+-- in its frame's units:
 --   arc: drifts sideways while the rise eases out   rise: straight up   stay: holds, only fades
 --   fountain: up, then back down past its start   fall: starts h above and drifts down to it
-local function Plan(t)
-	local d, h, dx = t.duration, t.rise, t.dx
+local function Plan(t, pop)
+	local k = t.frameScale
+	local d, h, dx = t.duration, t.rise / k, t.dx / k
+	if pop then
+		t.grow:SetScale(BOMB, BOMB); t.grow:SetDuration(0.01)
+		t.shrink:SetScale(1 / BOMB, 1 / BOMB); t.shrink:SetDuration(BOMB_TIME); t.shrink:SetSmoothing("OUT")
+	else
+		t.grow:SetScale(1, 1); t.grow:SetDuration(0.01)
+		t.shrink:SetScale(1, 1); t.shrink:SetDuration(0.01); t.shrink:SetSmoothing("NONE")
+	end
 	local fadeAt, fadeLen = d * FADE_AT, d * (1 - FADE_AT)
 	if t.anim == "fountain" then
 		local up = d * 0.45
@@ -243,7 +236,7 @@ local function Plan(t)
 		Leg(t.y1, 0, h, up, "OUT")
 		Leg(t.x2, dx * 0.55, 0, d - up, "NONE")
 		Leg(t.y2, 0, -h * 1.2, d - up, "IN")
-		t.fade:SetOrder(2)
+		t.fade:SetOrder(4)
 		t.fade:SetStartDelay(math.max(0, fadeAt - up))
 	else
 		local x, y, smoothing = dx, h, "OUT"
@@ -254,7 +247,7 @@ local function Plan(t)
 		Leg(t.y1, 0, y, d, smoothing)
 		Leg(t.x2, 0, 0, 0.01, "NONE")
 		Leg(t.y2, 0, 0, 0.01, "NONE")
-		t.fade:SetOrder(1)
+		t.fade:SetOrder(3)
 		t.fade:SetStartDelay(fadeAt)
 	end
 	t.fade:SetDuration(fadeLen)
@@ -271,15 +264,19 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	local t = Acquire()
 	local db = ns.db
 	t.group:Stop()
-	t:SetScale(1)
 	t:SetAlpha(1)
-	-- the real font size, Text size included; every icon has one size (a normal hit's), so crits
-	-- grow only their text
-	t.size, t.outline, t.grown = size * db.scale, color.thick and "THICKOUTLINE" or "OUTLINE", nil
+	-- the size it should show at (Text size included), drawn at up to FONT_MAX and scaled the rest;
+	-- every icon has one size (a normal hit's), so crits grow only their text
+	local want = size * db.scale
+	local fontPx = math.min(FONT_MAX, math.floor(want + 0.5))
+	t.frameScale = want / fontPx
+	t:SetScale(t.frameScale)
 	-- a new font string takes no text before it has a font
-	Size(t, pop and 1.6 or 1)
+	t.text:SetFont(ns.FontPath(), fontPx, color.thick and "THICKOUTLINE" or "OUTLINE")
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
+	local iconSize = SIZE * db.iconScale * db.scale / t.frameScale
+	t.icon:SetWidth(iconSize); t.icon:SetHeight(iconSize)
 	if icon and db.icons then
 		t.icon:SetTexture(icon)
 		t.icon:Show(); t.edge:Show()
@@ -313,16 +310,9 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	if color.thick then startY = startY + (SIZE + 6) * db.scale end
 	if t.anim == "fall" then startY = startY + t.rise end
 	t:ClearAllPoints()
-	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", math.floor(t.x + 0.5), math.floor(startY + 0.5))
-	if pop then
-		t.popped = 0
-		Size(t, 1.6)
-		t.group:SetScript("OnUpdate", Popping)
-	else
-		Size(t, 1)
-		t.group:SetScript("OnUpdate", nil)
-	end
-	Plan(t)
+	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", math.floor(t.x + 0.5) / t.frameScale,
+		math.floor(startY + 0.5) / t.frameScale)
+	Plan(t, pop)
 	t:Show()
 	table.insert(active, t)
 	t.group:Play()
