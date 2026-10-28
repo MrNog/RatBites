@@ -454,7 +454,13 @@ function ns.Test()
 			if into == "box" then
 				ns.BoxAdd("mine", h[1], h[2], h[3], pick())
 			elseif h[5] then
-				Show(nil, hx, hy, h[1], h[2], h[3], pick(), h[4], true)
+				-- the sample heal lands on your own raid frame, as a real heal on you would
+				local f = into == "frames" and ns.FrameFor(ns.playerGUID)
+				if f then
+					Show({ frame = f, guid = ns.playerGUID }, hx, hy, h[1], h[2], h[3] * 0.65, pick(), h[4], nil, db.height * 0.4)
+				else
+					Show(nil, hx, hy, h[1], h[2], h[3], pick(), h[4], true)
+				end
 			else
 				Show(where, x, y, h[1], h[2], h[3], pick(), h[4])
 			end
