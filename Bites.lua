@@ -76,10 +76,18 @@ function ns.FontPath()
 	return STANDARD_TEXT_FONT
 end
 
+-- Hidden effect spells whose own icon is missing or blank borrow the icon of the spell players know:
+-- Beacon of Light passes each heal on through 53652 / 53654, shown with the beacon itself (53563).
+local ICON_FROM = { [53652] = 53563, [53654] = 53563 }
+
 local icons = {}
 local function SpellIcon(id)
 	if not id then return nil end
-	if icons[id] == nil then icons[id] = select(3, GetSpellInfo(id)) or false end
+	if icons[id] == nil then
+		local icon = select(3, GetSpellInfo(ICON_FROM[id] or id))
+		if not icon or icon == "" then icon = select(3, GetSpellInfo(id)) end
+		icons[id] = (icon and icon ~= "") and icon or false
+	end
 	return icons[id] or nil
 end
 
@@ -487,6 +495,34 @@ local function Received(kind, amount, crit, icon, word)
 	Route(row, nil, nil, label, color, size, icon, crit and ns.db.critStyle == "pop", amount, heal and "+" or "-")
 end
 
+-- /bites last: the last combat-log lines RatBites read (yours, or landing on you), what it made of
+-- each and where it went, to find out why a number didn't show
+local trace, TRACE_MAX = {}, 12
+
+local function Trace(event, sourceGUID, destGUID, destName, kind, amount, id, spellName)
+	local db = ns.db
+	local onMe = destGUID == ns.playerGUID
+	local row = kind and (onMe and (HEALING[kind] and "healMe" or "dmgMe") or (HEALING[kind] and "heal" or "dmg"))
+	local r = row and db.route[row]
+	local places = {}
+	if r then
+		for _, key in ipairs({ "plate", "me", "mine", "recv" }) do
+			if r[key] then places[#places + 1] = key end
+		end
+	end
+	local spell = type(spellName) == "string" and spellName or "melee"
+	local line = format("%s %s -> %s: %s %s%s", date("%H:%M:%S"), event, onMe and "you" or tostring(destName),
+		tostring(spell), kind and (kind .. " " .. tostring(amount or "")) or "not shown",
+		r and (" [" .. (#places > 0 and table.concat(places, " ") or "nowhere") .. "]") or "")
+	table.insert(trace, line)
+	if #trace > TRACE_MAX then table.remove(trace, 1) end
+end
+
+function ns.PrintTrace()
+	if #trace == 0 then ns.Print("nothing read yet") return end
+	for _, line in ipairs(trace) do ns.Print(line) end
+end
+
 ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFlags, destGUID, destName, _, ...)
 	local db = ns.db
 	if not db or not db.enabled or not ns.playerGUID then return end
@@ -500,6 +536,7 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 		lastHeal[destGUID] = h
 	end
 	local kind, amount, crit, icon, miss = Read(event, ...)
+	Trace(event, sourceGUID, destGUID, destName, kind, amount, ...)
 	if not kind then return end
 	-- your own auto-attacks show the weapon doing them: main hand for swings, the ranged slot for
 	-- Auto Shot, wands and throws (an empty slot keeps the plain sword)

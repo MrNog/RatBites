@@ -351,6 +351,8 @@ SlashCmdList.RATBITES = function(msg)
 		ns.ToggleLegend()
 	elseif msg == "move" then
 		ns.SetBoxesUnlocked(not ns.BoxesUnlocked())
+	elseif msg == "last" then
+		ns.PrintTrace()
 	elseif msg == "plates" then
 		ns.ReportPlates()
 	else
