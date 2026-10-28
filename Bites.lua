@@ -184,16 +184,21 @@ local function Path(t, p)
 	return t.dx * p, h * p - 20 * p * p
 end
 
--- Offsets are in the text's own units, so a spot in UIParent units is divided by the text's scale.
+-- The path, the start gap and the stack line are screen distances (UIParent units): the text's
+-- own offsets are scaled with it, so each is divided by the text's scale, and a bigger text size
+-- doesn't send numbers further. The stack line grows with the text, as the lines it keeps apart do.
 -- On a plate the spot is kept up to date while the plate still shows the same name, so a plate that
 -- goes away mid-flight leaves the text where it was.
+local START_GAP = 12  -- how far above the plate a number starts
 local function Move(t, elapsed)
 	local p = elapsed / t.duration
-	local scale = ns.db.scale
+	local textScale = ns.db.scale
+	local scale = textScale
 	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
 	t:SetScale(scale)
 	local dx, dy = Path(t, p)
-	dy = dy + (t.straight and 0 or 20) + t.line
+	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
+	dx, dy = dx / scale, dy / scale
 	t:ClearAllPoints()
 	if t.plate and ns.PlateShows(t.plate, t.name) then
 		t:SetPoint("CENTER", t.plate, "TOP", dx, dy)
