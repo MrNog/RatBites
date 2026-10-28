@@ -200,6 +200,7 @@ end
 local START_GAP = 12  -- how far above the plate a number starts
 local DOT_LINGER = 4  -- sec a DoT's number holds on its plate after a tick
 local DOT_ABOVE = 26  -- how much higher than other numbers a DoT's number holds
+local DOT_SIDE = 40   -- how far left or right of the plate's middle a DoT's number holds
 
 -- What a number starts above: the plate, or with ElvUI's plates the row of your debuffs on it, so
 -- the number doesn't sit on top of the icons.
@@ -293,15 +294,20 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, ti
 		local s = SPREAD[db.spread] or SPREAD.normal
 		t.dx = arc * (s[1] + math.random() * s[2])
 	end
-	-- DoT numbers on one plate hold at the end of their path for seconds, so each one already there
-	-- puts the next a line higher and on the other side, or they would end on the same spot
+	-- DoT numbers on one plate hold at the end of their path for seconds, so each takes the first
+	-- slot no other DoT there holds: slots alternate left and right a fixed distance out, two slots
+	-- (one each side) per line, so no two ever end on the same spot
+	t.slot = nil
 	if tick and plate then
-		local n = 0
+		local used = {}
 		for _, o in ipairs(active) do
-			if o.tick and o.plate == plate then n = n + 1 end
+			if o.slot and o.plate == plate then used[o.slot] = true end
 		end
-		t.line = n * (size + 6)
-		t.dx = (n % 2 == 0 and -1 or 1) * math.abs(t.dx)
+		local slot = 0
+		while used[slot] do slot = slot + 1 end
+		t.slot = slot
+		t.line = math.floor(slot / 2) * (size + 12)
+		t.dx = (slot % 2 == 0 and -1 or 1) * DOT_SIDE
 	end
 	t.start = GetTime()
 	t:Show()
