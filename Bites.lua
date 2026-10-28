@@ -280,6 +280,18 @@ for _, id in ipairs({ 17, 47753, 58597, 64413 }) do  -- Power Word: Shield, Divi
 end
 local HEALING = { heal = true, overheal = true, shield = true }
 
+-- Val'anyr's shield (Protection of Ancient Kings) has a generic shield icon that reads like another
+-- class's shield, so it shows the mace itself (item 46017, Val'anyr, Hammer of Ancient Kings).
+local ITEM_ICONS = { [64413] = 46017 }
+local function ShieldIcon(id)
+	local item = ITEM_ICONS[id]
+	if item then
+		local icon = (GetItemIcon and GetItemIcon(item)) or select(10, GetItemInfo(item))
+		if icon then return icon end
+	end
+	return SpellIcon(id)
+end
+
 -- kind ("swing", "spell", "dot", "heal", "overheal", "shield" or "miss"), amount, crit, icon, miss type
 local function Read(event, ...)
 	if event == "SWING_DAMAGE" then
@@ -302,7 +314,7 @@ local function Read(event, ...)
 		return "heal", healed, crit, SpellIcon(id)
 	elseif event == "SPELL_AURA_APPLIED" then
 		local id, spellName, _, auraType = ...
-		if auraType == "BUFF" and ns.SHIELDS[spellName] then return "shield", nil, nil, SpellIcon(id) end
+		if auraType == "BUFF" and ns.SHIELDS[spellName] then return "shield", nil, nil, ShieldIcon(id) end
 	elseif event == "SWING_MISSED" then
 		local missType = ...
 		return "miss", nil, nil, ATTACK_ICON, missType
