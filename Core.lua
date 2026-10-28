@@ -1,9 +1,7 @@
 local ADDON, ns = ...
 
--- anchor (damage): "plates" = on each enemy's nameplate, "target" = your target only, "screen" = a
--- fixed spot, "box" = My box
--- healsOn: "frames" = the healed player's raid frame, "plates" = their nameplate, "column" = right of
--- the screen's centre, "box" = My box; heals with no frame or plate to ride go to the column too
+-- anchor (your damage and heals): "plates" = on the unit's nameplate, "target" = your target only,
+-- "screen" = a fixed spot, "box" = My box
 -- receivedOn: "box" = Received box, "floating" = rising left of the screen's centre
 -- animation: "arc", "rise", "stay", "fountain" or "fall" (Bites.lua's Path)
 -- critStyle: "pop" = starts large and settles, "big" = larger, "plain" = colour only
@@ -11,7 +9,6 @@ local ADDON, ns = ...
 ns.DEFAULTS = {
 	enabled = true,
 	anchor = "plates",
-	healsOn = "frames",
 	receivedOn = "box",
 	animation = "arc",
 	height = 70,
