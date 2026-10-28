@@ -196,8 +196,7 @@ end
 -- The path, the start gap and the stack line are screen distances (UIParent units): the text's
 -- own offsets are scaled with it, so each is divided by the text's scale, and a bigger text size
 -- doesn't send numbers further. The stack line grows with the text, as the lines it keeps apart do.
--- On a plate the spot is kept up to date while the plate still shows the same name, so a plate that
--- goes away mid-flight leaves the text where it was.
+-- Every number moves from a fixed spot in UIParent units (for a plate, read when it appears).
 local START_GAP = 12  -- how far above the plate a number starts
 
 -- What a number starts above: the plate, or with ElvUI's plates the row of your debuffs on it, so
@@ -227,17 +226,7 @@ local function Move(t, elapsed)
 	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
 	dx, dy = dx / scale, dy / scale
 	t:ClearAllPoints()
-	if t.plate and ns.PlateShows(t.plate, t.name) then
-		t:SetPoint("CENTER", t.plate, "TOP", dx, dy + t.lift / scale)
-		local x, top = t.plate:GetCenter(), t.plate:GetTop()
-		if x and top then
-			local s = t.plate:GetEffectiveScale() / UIParent:GetEffectiveScale()
-			t.x, t.y = x * s, top * s + t.lift
-		end
-	else
-		t.plate = nil
-		t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x / scale + dx, t.y / scale + dy)
-	end
+	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x / scale + dx, t.y / scale + dy)
 	t:SetAlpha(p > FADE_AT and 1 - (p - FADE_AT) / (1 - FADE_AT) or 1)
 end
 
@@ -261,13 +250,15 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t.plate, t.name, t.x, t.y = plate, name, x, y
 	-- how far above the plate's top the number starts, read once: over the debuff row if the plate
 	-- shows one now (read every frame, ElvUI's row flickering would make the number jump)
-	t.lift = 0
+	-- A number on a plate starts over the plate's top (or its debuff row), read once here: from then
+	-- on it moves on its own, since a plate shifts a pixel or two every frame as you or the camera
+	-- move and a number following it would tremble.
 	if plate then
 		local base = PlateTop(plate)
-		local baseTop, plateTop = base:GetTop(), plate:GetTop()
-		if base ~= plate and baseTop and plateTop then
-			t.lift = math.max(0, baseTop * base:GetEffectiveScale() - plateTop * plate:GetEffectiveScale())
-				/ UIParent:GetEffectiveScale()
+		local cx, top = plate:GetCenter(), base:GetTop()
+		if cx and top then
+			local ui = UIParent:GetEffectiveScale()
+			t.x, t.y = cx * plate:GetEffectiveScale() / ui, top * base:GetEffectiveScale() / ui
 		end
 	end
 	t.label, t.shield, t.serial = label, nil, ns.NextSerial()
