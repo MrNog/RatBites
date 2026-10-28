@@ -1,14 +1,27 @@
 local ADDON, ns = ...
 
--- anchor (damage): "plates" = on each enemy's nameplate, "target" = your target only, "screen" = a fixed spot
+-- anchor (damage): "plates" = on each enemy's nameplate, "target" = your target only, "screen" = a
+-- fixed spot, "box" = My box
 -- healsOn: "frames" = the healed player's raid frame, "plates" = their nameplate, "column" = right of
--- the screen's centre; heals with no frame or plate to ride go to the column too
+-- the screen's centre, "box" = My box; heals with no frame or plate to ride go to the column too
+-- receivedOn: "box" = Received box, "floating" = rising left of the screen's centre
+-- animation: "arc", "rise", "stay", "fountain" or "fall" (Bites.lua's Path)
 -- critStyle: "pop" = starts large and settles, "big" = larger, "plain" = colour only
 -- numbers: "short" = 12.4k, "full" = 12,431, "raw" = 12431
 ns.DEFAULTS = {
 	enabled = true,
 	anchor = "plates",
 	healsOn = "frames",
+	receivedOn = "box",
+	animation = "arc",
+	height = 70,
+	duration = 1.5,
+	boxScroll = "up",
+	boxTime = 5,
+	boxes = {
+		mine = { x = 300, y = -60, w = 200, h = 220 },
+		received = { x = -300, y = -60, w = 200, h = 220 },
+	},
 	scale = 1,
 	font = "friz",
 	icons = true,
@@ -89,6 +102,8 @@ SlashCmdList.RATBITES = function(msg)
 	msg = strlower(strtrim(msg or ""))
 	if msg == "test" then
 		ns.Test()
+	elseif msg == "move" then
+		ns.SetBoxesUnlocked(not ns.BoxesUnlocked())
 	elseif msg == "plates" then
 		ns.ReportPlates()
 	else

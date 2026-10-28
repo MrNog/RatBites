@@ -17,6 +17,7 @@ local stripe = false   -- every other row in a section gets a faint band
 local function Changed()
 	for _, fn in ipairs(refreshers) do fn() end
 	ns.ApplyBlizzardText()
+	ns.RelayoutBoxes()
 end
 
 -- plain text, no drop shadow (the shadow made small text look bold)
@@ -119,6 +120,16 @@ local function Stepper(parent, y, label, lo, hi, step, fmt, get, set)
 	return y - ROW_H
 end
 
+-- a red button on the right of its row; label() gives its text after each change
+local function Action(parent, y, text, onClick, label)
+	local row = Row(parent, y, text)
+	local b = ns.RedButton(row, "", 150, 22)
+	b:SetPoint("RIGHT", -4, 0)
+	b:SetScript("OnClick", function() onClick(); Changed() end)
+	refreshers[#refreshers + 1] = function() b:SetText(label()) end
+	return y - ROW_H
+end
+
 function ns.CreateOptions()
 	C, rgb = ns.C, ns.rgb
 	local db = ns.db
@@ -152,15 +163,30 @@ function ns.CreateOptions()
 	y = Check(panel, y, "Enabled",
 		function() return db.enabled end, function(v) db.enabled = v end)
 	y = Choice(panel, y, "Damage on",
-		{ { "plates", "Nameplates" }, { "target", "Target only" }, { "screen", "Center screen" } },
+		{ { "plates", "Nameplates" }, { "target", "Target only" }, { "screen", "Center screen" }, { "box", "My box" } },
 		function() return db.anchor end, function(v) db.anchor = v end)
 	y = Choice(panel, y, "Heals on",
-		{ { "frames", "Raid frames" }, { "plates", "Nameplates" }, { "column", "Column" } },
+		{ { "frames", "Raid frames" }, { "plates", "Nameplates" }, { "column", "Column" }, { "box", "My box" } },
 		function() return db.healsOn end, function(v) db.healsOn = v end)
+	y = Choice(panel, y, "Received on",
+		{ { "box", "Received box" }, { "floating", "Floating" } },
+		function() return db.receivedOn end, function(v) db.receivedOn = v end)
 	y = Stepper(panel, y, "Size", 0.5, 2, 0.1, function(v) return format("%d%%", v * 100 + 0.5) end,
 		function() return db.scale end, function(v) db.scale = v end)
 	y = Choice(panel, y, "Font", fonts,
 		function() return db.font end, function(v) db.font = v end)
+
+	y = Section(panel, y - 10, "Motion")
+	y = Choice(panel, y, "Animation",
+		{ { "arc", "Arc" }, { "rise", "Rise" }, { "stay", "Stay" }, { "fountain", "Fountain" }, { "fall", "Fall" } },
+		function() return db.animation end, function(v) db.animation = v end)
+	y = Choice(panel, y, "Spread",
+		{ { "none", "None" }, { "tight", "Tight" }, { "normal", "Normal" }, { "wide", "Wide" } },
+		function() return db.spread end, function(v) db.spread = v end)
+	y = Stepper(panel, y, "Height", 20, 150, 10, function(v) return format("%d", v) end,
+		function() return db.height end, function(v) db.height = v end)
+	y = Stepper(panel, y, "Duration", 0.8, 4, 0.1, function(v) return format("%.1fs", v) end,
+		function() return db.duration end, function(v) db.duration = v end)
 
 	y = Section(panel, y - 10, "Look")
 	y = Check(panel, y, "Spell icons",
@@ -172,9 +198,6 @@ function ns.CreateOptions()
 	y = Choice(panel, y, "Crit style",
 		{ { "pop", "Pop" }, { "big", "Bigger" }, { "plain", "Plain" } },
 		function() return db.critStyle end, function(v) db.critStyle = v end)
-	y = Choice(panel, y, "Spread",
-		{ { "none", "None" }, { "tight", "Tight" }, { "normal", "Normal" }, { "wide", "Wide" } },
-		function() return db.spread end, function(v) db.spread = v end)
 	y = Choice(panel, y, "Short numbers",
 		{ { "short", "12.4k" }, { "full", "12,431" }, { "raw", "12431" } },
 		function() return db.numbers end, function(v) db.numbers = v end)
@@ -197,14 +220,28 @@ function ns.CreateOptions()
 	y = Check(panel, y, "Misses / avoidance", flag(show, "miss"))
 	y = Check(panel, y, "Pet damage", flag(show, "pet"))
 
-	y = Section(panel, y - 10, "Incoming")
+	y = Section(panel, y - 10, "Received")
 	y = Check(panel, y, "Damage taken", flag(inc, "damage"))
 	y = Check(panel, y, "Heals", flag(inc, "heals"))
 	y = Check(panel, y, "Hide Blizzard text", flag(db, "hideBlizzard"))
 
+	y = Section(panel, y - 10, "Boxes")
+	y = Choice(panel, y, "Scroll",
+		{ { "up", "Up" }, { "down", "Down" } },
+		function() return db.boxScroll end, function(v) db.boxScroll = v end)
+	y = Stepper(panel, y, "Line time", 2, 10, 1, function(v) return format("%ds", v) end,
+		function() return db.boxTime end, function(v) db.boxTime = v end)
+	y = Action(panel, y, "Move boxes",
+		function() ns.SetBoxesUnlocked(not ns.BoxesUnlocked()) end,
+		function() return ns.BoxesUnlocked() and "Lock" or "Unlock" end)
+
 	panel:SetHeight(-math.min(y, leftEnd) + 16)
 	panel:SetScript("OnShow", function() for _, fn in ipairs(refreshers) do fn() end end)
-	panel:SetScript("OnHide", function() ns.CloseDropdowns() end)
+	panel:SetScript("OnHide", function()
+		ns.CloseDropdowns()
+		-- boxes left unlocked would keep catching clicks meant for the game
+		ns.SetBoxesUnlocked(false)
+	end)
 end
 
 function ns.OpenOptions()

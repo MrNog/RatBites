@@ -1,11 +1,10 @@
 local ADDON, ns = ...
 
--- Floating numbers for what you and your pet do: damage on the enemy's nameplate, heals on the
--- friend's, each with its spell icon. Every number rises in a short arc and fades. What others do to
--- you (Incoming) rises straight up from a fixed spot left of the screen's centre.
+-- Numbers for what you and your pet do and what is done to you, each with its spell icon. A number
+-- floats (on an enemy's nameplate, a friend's raid frame or a fixed spot) in the chosen animation and
+-- fades, or goes into one of the boxes (Boxes.lua) as a line.
 
-local DURATION = 1.45
-local FADE_AT = 0.65      -- share of DURATION before the fade starts
+local FADE_AT = 0.65      -- share of a number's time before its fade starts
 local POP_TIME = 0.15     -- a popping crit shrinks to its size over this long
 local SIZE = 20           -- a normal hit's font size at scale 1
 local MAX_TEXTS = 40
@@ -29,7 +28,7 @@ local COLOR = {
 	taken = { 1, 0.22, 0.18 },
 }
 
-local function FontPath()
+function ns.FontPath()
 	for _, f in ipairs(ns.FONTS) do
 		if f[1] == ns.db.font then return f[3] end
 	end
@@ -137,16 +136,28 @@ local function Holds(t)
 	return ns.FrameShows(t.anchor, t.ident)
 end
 
+-- Each animation's offset from the start at p (0 to 1 of the number's time). h is the Height setting.
+--   arc: rises while it drifts sideways   rise: straight up   stay: holds still, only fades
+--   fountain: pops up and falls back past its start   fall: starts h above and drifts down to it
+local function Path(t, p)
+	local h = t.rise
+	if t.anim == "rise" then return 0, h * p end
+	if t.anim == "stay" then return 0, 0 end
+	if t.anim == "fountain" then return t.dx * p, h * (4 * p - 4.6 * p * p) end
+	if t.anim == "fall" then return 0, h * (1 - p) end
+	return t.dx * p, h * p - 20 * p * p
+end
+
 -- Offsets are in the text's own units, so a spot in UIParent units is divided by the text's scale.
 -- On a plate or unit frame the spot is kept up to date, so one that goes away mid-flight leaves the
 -- text where it was. Numbers start above a plate and on a unit frame's centre.
 local function Move(t, elapsed)
-	local p = elapsed / DURATION
+	local p = elapsed / t.duration
 	local scale = ns.db.scale
 	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
 	t:SetScale(scale)
-	local dx = t.dx * p
-	local dy = (t.straight and 0 or 20) + t.line + t.rise * p - 20 * p * p
+	local dx, dy = Path(t, p)
+	dy = dy + (t.straight and 0 or 20) + t.line
 	t:ClearAllPoints()
 	if t.anchor and Holds(t) then
 		t:SetPoint("CENTER", t.anchor, t.onPlate and "TOP" or "CENTER", dx, dy)
@@ -164,14 +175,16 @@ local function Move(t, elapsed)
 end
 
 -- where: { plate = f, name = n } or { frame = f, guid = g } to ride, or nil for the spot x, y in
--- UIParent units; straight: rise without the arc; rise: how far it climbs (default 70)
-local function Show(where, x, y, label, color, size, icon, pop, straight, rise)
+-- UIParent units. column: a fixed spot's straight column, which always rises. rise: how far it
+-- travels (default: the Height setting).
+local function Show(where, x, y, label, color, size, icon, pop, column, rise)
 	if #active >= MAX_TEXTS then Release(1) end
 	local t = Acquire()
-	t.text:SetFont(FontPath(), size, "OUTLINE")
+	local db = ns.db
+	t.text:SetFont(ns.FontPath(), size, "OUTLINE")
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
-	if icon and ns.db.icons then
+	if icon and db.icons then
 		t.icon:SetTexture(icon)
 		t.icon:SetWidth(size); t.icon:SetHeight(size)
 		t.icon:Show(); t.edge:Show()
@@ -185,13 +198,16 @@ local function Show(where, x, y, label, color, size, icon, pop, straight, rise)
 		t.ident = where.name or where.guid
 	end
 	t.x, t.y = x, y
-	t.pop, t.straight, t.rise = pop, straight, rise or 70
+	-- a raid frame's numbers stay over the frame: no sideways drift, no lift above it
+	t.straight = column or (where and where.frame ~= nil)
+	t.anim = column and "rise" or db.animation
+	t.pop, t.rise, t.duration = pop, rise or db.height, db.duration
 	t.line = StackLine(t.anchor or format("%d:%d", x, y), size)
-	if straight then
+	if t.straight then
 		t.dx = 0
 	else
 		arc = -arc
-		local s = SPREAD[ns.db.spread] or SPREAD.normal
+		local s = SPREAD[db.spread] or SPREAD.normal
 		t.dx = arc * (s[1] + math.random() * s[2])
 	end
 	t.start = GetTime()
@@ -212,19 +228,19 @@ root:SetScript("OnUpdate", function()
 	for i = #active, 1, -1 do
 		local t = active[i]
 		local elapsed = now - t.start
-		if elapsed >= DURATION then Release(i) else Move(t, elapsed) end
+		if elapsed >= t.duration then Release(i) else Move(t, elapsed) end
 	end
 end)
 
--- where numbers go without a plate: above the screen's centre, your heals right of it and Incoming
--- left of it
+-- where floating numbers go without a plate: above the screen's centre, your heals right of it and
+-- what is done to you left of it
 local function ScreenSpot()
 	return UIParent:GetWidth() / 2, UIParent:GetHeight() / 2 + 140
 end
 local function HealSpot()
 	return UIParent:GetWidth() / 2 + 160, UIParent:GetHeight() / 2 - 40
 end
-local function IncomingSpot()
+local function ReceivedSpot()
 	return UIParent:GetWidth() / 2 - 160, UIParent:GetHeight() / 2 - 40
 end
 
@@ -283,45 +299,9 @@ local function Read(event, ...)
 	end
 end
 
-local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
-	local db, show = ns.db, ns.db.show
-	if who == "pet" and not show.pet then return end
-	if not show[HEALING[kind] and "heal" or kind] then return end
-	if amount then
-		if amount <= 0 or not show[crit and "crit" or "normal"] then return end
-	end
-	local heal = HEALING[kind]
-	local where, x, y, straight, rise
-	if heal then
-		-- heals go where healers look: the raid frame, the friend's plate, or their own column
-		if db.healsOn == "frames" then
-			local f = ns.FrameFor(guid)
-			if f then where, rise, straight = { frame = f, guid = guid }, 28, true end
-		elseif db.healsOn == "plates" then
-			local plate = ns.PlateFor(guid, name)
-			if plate then where = { plate = plate, name = name } end
-		end
-		if not where then
-			x, y = HealSpot()
-			straight = true
-		end
-	else
-		local isTarget = UnitExists("target") and UnitGUID("target") == guid
-		if db.anchor == "target" and not isTarget then return end
-		if db.anchor ~= "screen" then
-			local plate = ns.PlateFor(guid, name)
-			ns.lastDest, ns.lastDestPlate = name, plate
-			if plate then
-				where = { plate = plate, name = name }
-			elseif not isTarget then
-				-- no plate to ride: only your target's numbers fall back to the screen
-				return
-			end
-		end
-		x, y = ScreenSpot()
-	end
-	x, y = x or 0, y or 0
-
+-- the text, colour, font size and pop of one of your numbers
+local function Style(who, kind, amount, crit, miss)
+	local db = ns.db
 	local label, color, size, pop = nil, COLOR.normal, SIZE, false
 	if kind == "miss" then
 		-- DODGE, PARRY, IMMUNE ... are the game's own words for each miss
@@ -345,24 +325,78 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 		end
 	end
 	if who == "pet" then size = size * 0.8 end
-	-- a raid frame is small: its numbers too
-	if where and where.frame then size = size * 0.65 end
-	Show(where, x, y, label, color, size, icon, pop, straight, rise)
+	return label, color, size, pop
 end
 
-local function Incoming(kind, amount, crit, icon)
-	local inc = ns.db.incoming
+local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
+	local db, show = ns.db, ns.db.show
+	if who == "pet" and not show.pet then return end
+	if not show[HEALING[kind] and "heal" or kind] then return end
+	if amount then
+		if amount <= 0 or not show[crit and "crit" or "normal"] then return end
+	end
+	local heal = HEALING[kind]
+	local into = heal and db.healsOn or db.anchor
+	if into == "box" then
+		local label, color, size = Style(who, kind, amount, crit, miss)
+		ns.BoxAdd("mine", label, color, size, icon)
+		return
+	end
+
+	local where, x, y, column, rise
+	if heal then
+		-- heals go where healers look: the raid frame, the friend's plate, or their own column
+		if into == "frames" then
+			local f = ns.FrameFor(guid)
+			if f then where, rise = { frame = f, guid = guid }, db.height * 0.4 end
+		elseif into == "plates" then
+			local plate = ns.PlateFor(guid, name)
+			if plate then where = { plate = plate, name = name } end
+		end
+		if not where then
+			x, y = HealSpot()
+			column = true
+		end
+	else
+		local isTarget = UnitExists("target") and UnitGUID("target") == guid
+		if into == "target" and not isTarget then return end
+		if into ~= "screen" then
+			local plate = ns.PlateFor(guid, name)
+			ns.lastDest, ns.lastDestPlate = name, plate
+			if plate then
+				where = { plate = plate, name = name }
+			elseif not isTarget then
+				-- no plate to ride: only your target's numbers fall back to the screen
+				return
+			end
+		end
+		x, y = ScreenSpot()
+	end
+
+	local label, color, size, pop = Style(who, kind, amount, crit, miss)
+	-- a raid frame is small: its numbers too
+	if where and where.frame then size = size * 0.65 end
+	Show(where, x or 0, y or 0, label, color, size, icon, pop, column, rise)
+end
+
+local function Received(kind, amount, crit, icon)
+	local db, inc = ns.db, ns.db.incoming
 	if kind == "miss" or kind == "overheal" or kind == "shield" or not amount or amount <= 0 then return end
 	if kind == "heal" then
 		if not inc.heals then return end
 	elseif not inc.damage then
 		return
 	end
-	local x, y = IncomingSpot()
 	local heal = kind == "heal"
+	local label = (heal and "+" or "-") .. Abbrev(amount)
+	local color = heal and COLOR.heal or COLOR.taken
 	local size = crit and SIZE * 1.2 or SIZE * 0.9
-	Show(nil, x, y, (heal and "+" or "-") .. Abbrev(amount), heal and COLOR.heal or COLOR.taken,
-		size, icon, crit and ns.db.critStyle == "pop", true)
+	if db.receivedOn == "box" then
+		ns.BoxAdd("received", label, color, size, icon)
+	else
+		local x, y = ReceivedSpot()
+		Show(nil, x, y, label, color, size, icon, crit and db.critStyle == "pop", true)
+	end
 end
 
 ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFlags, destGUID, destName, _, ...)
@@ -376,7 +410,7 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	-- your heals on yourself are your heals: they go on your own raid frame like anyone else's
 	local ownHeal = who and HEALING[kind]
 	if toMe and not ownHeal then
-		Incoming(kind, amount, crit, icon)
+		Received(kind, amount, crit, icon)
 	else
 		Outgoing(who, destGUID, destName, kind, amount, crit, icon, miss)
 	end
@@ -388,7 +422,7 @@ ns.On("PLAYER_LOGIN", function()
 end)
 
 --------------------------------------------------------------------------------
--- /bites test: one of each kind on your target's plate, or above the screen's centre
+-- /bites test: one of each kind where your settings send it
 --------------------------------------------------------------------------------
 
 function ns.Test()
@@ -399,27 +433,41 @@ function ns.Test()
 		book[#book + 1] = tex
 	end
 	local function pick() return book[math.random(math.max(#book, 1))] or ATTACK_ICON end
+	local db = ns.db
 	local guid, name = UnitGUID("target"), UnitName("target")
 	local plate = guid and ns.PlateFor(guid, name)
 	local where = plate and { plate = plate, name = name }
 	local x, y = ScreenSpot()
-	local db = ns.db
+	local hx, hy = HealSpot()
+	-- label, colour, size, pop, heal
 	local hits = {
-		{ COLOR.normal, SIZE, "1234", false },
-		{ COLOR.big, SIZE * 1.15, Abbrev(2331), false },
-		{ COLOR.crit, SIZE * (db.critStyle == "big" and 1.5 or db.critStyle == "pop" and 1.3 or 1), Abbrev(12431), db.critStyle == "pop" },
-		{ COLOR.miss, SIZE * 0.8, DODGE, false },
-		{ COLOR.heal, SIZE, "+" .. Abbrev(812), false },
+		{ "1234", COLOR.normal, SIZE, false },
+		{ Abbrev(2331), COLOR.big, SIZE * 1.15, false },
+		{ Abbrev(12431), COLOR.crit, SIZE * (db.critStyle == "big" and 1.5 or db.critStyle == "pop" and 1.3 or 1), db.critStyle == "pop" },
+		{ DODGE, COLOR.miss, SIZE * 0.8, false },
+		{ "+" .. Abbrev(812), COLOR.heal, SIZE, false, true },
+		{ "Shield", COLOR.shield, SIZE * 0.85, false, true },
 	}
 	for i, h in ipairs(hits) do
 		table.insert(queued, { at = GetTime() + (i - 1) * 0.25, fn = function()
-			Show(where, x, y, h[3], h[1], h[2], pick(), h[4], false)
+			local into = h[5] and db.healsOn or db.anchor
+			if into == "box" then
+				ns.BoxAdd("mine", h[1], h[2], h[3], pick())
+			elseif h[5] then
+				Show(nil, hx, hy, h[1], h[2], h[3], pick(), h[4], true)
+			else
+				Show(where, x, y, h[1], h[2], h[3], pick(), h[4])
+			end
 		end })
 	end
-	if db.incoming.damage or db.incoming.heals then
-		local ix, iy = IncomingSpot()
-		table.insert(queued, { at = GetTime() + 0.4, fn = function()
-			Show(nil, ix, iy, "-" .. Abbrev(640), COLOR.taken, SIZE * 0.9, ATTACK_ICON, false, true)
+	for i, r in ipairs({ { "-" .. Abbrev(640), COLOR.taken }, { "+" .. Abbrev(1923), COLOR.heal } }) do
+		table.insert(queued, { at = GetTime() + 0.4 + (i - 1) * 0.25, fn = function()
+			if db.receivedOn == "box" then
+				ns.BoxAdd("received", r[1], r[2], SIZE * 0.9, ATTACK_ICON)
+			else
+				local rx, ry = ReceivedSpot()
+				Show(nil, rx, ry, r[1], r[2], SIZE * 0.9, ATTACK_ICON, false, true)
+			end
 		end })
 	end
 end
