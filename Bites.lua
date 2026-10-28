@@ -155,7 +155,7 @@ end
 -- Each number moves by WoW's own animation system, so the engine moves it smoothly between frames:
 -- its spot is set once, then animations slide it. Sideways moves at a steady pace while the rise
 -- eases out, which together make the arc; the fade is an animation too.
--- The client draws fonts up to 64 px, so a number bigger than that (a 2.7x crit) is drawn at 64 and
+-- The client draws fonts up to 64 px, so a number bigger than that (a big crit) is drawn at 64 and
 -- its frame scaled up the rest; the frame's offsets are scaled with it, so they are divided back.
 -- A popping crit lands like a bomb: a Scale animation makes it BOMB times bigger at once, the next
 -- shrinks it smoothly back over BOMB_TIME, and only then does its path start.
@@ -460,8 +460,8 @@ local function Style(who, kind, amount, crit, miss)
 			elseif kind ~= "overheal" then
 				color = COLOR.crit
 			end
-			if db.critStyle == "big" then size = size * 2.7 end
-			if db.critStyle == "pop" then size, pop = size * 2.7, true end
+			if db.critStyle == "big" then size = size * db.critSize end
+			if db.critStyle == "pop" then size, pop = size * db.critSize, true end
 		elseif (kind == "swing" or kind == "spell") and db.bigGold and IsBig(amount) then
 			color, size = COLOR.big, SIZE * 1.15
 		end
@@ -685,7 +685,7 @@ function ns.Test()
 	local db = ns.db
 	local guid, name = UnitGUID("target"), UnitName("target")
 	local plate = guid and ns.PlateFor(guid, name)
-	local critSize = SIZE * (db.critStyle == "big" and 2.7 or db.critStyle == "pop" and 2.7 or 1)
+	local critSize = SIZE * (db.critStyle == "plain" and 1 or db.critSize)
 	-- label, colour, size, pop, Where row
 	local hits = {
 		{ "1234", COLOR.normal, SIZE, false, "dmg" },
@@ -713,7 +713,7 @@ local legend
 -- label, colour, sample, size against a normal hit; built on each opening, so it follows the settings
 local function LegendEntries()
 	local db = ns.db
-	local critSize = db.critStyle == "big" and 2.7 or db.critStyle == "pop" and 2.7 or 1
+	local critSize = db.critStyle == "plain" and 1 or db.critSize
 	local normal = db.classColorFor == "normal" and ns.classColor or COLOR.normal
 	local crit = db.classColorFor == "crit" and ns.classCrit or COLOR.crit
 	local healCrit = db.classColorFor == "crit" and ns.classCrit or COLOR.healCrit

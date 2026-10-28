@@ -256,6 +256,8 @@ local function LookPage(page)
 	y = Choice(page, y, "Critical hits",
 		{ { "pop", "Pop" }, { "big", "Bigger" }, { "plain", "Plain" } },
 		flag("critStyle"))
+	y = Stepper(page, y, "Critical hit size", 1.5, 10, 0.5, function(v) return format("%.1fx", v) end,
+		flag("critSize"))
 	y = Check(page, y, "Big hits in gold", flag("bigGold"))
 	y = Choice(page, y, "My class color for",
 		{ { "off", "Off" }, { "normal", "Normal hits" }, { "crit", "Crits" } },

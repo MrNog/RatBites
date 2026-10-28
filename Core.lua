@@ -36,6 +36,7 @@ ns.DEFAULTS = {
 	classColorFor = "off",  -- "normal" = your normal damage, "crit" = your crits; the other keeps its colour
 	bigGold = true,
 	critStyle = "pop",
+	critSize = 2.7,  -- a crit (Pop or Bigger) against a normal hit
 	spread = "normal",
 	numbers = "short",
 	show = { normal = true, crit = true, swing = true, spell = true, dot = true, miss = true, pet = true,
