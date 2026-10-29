@@ -364,8 +364,12 @@ local function syncArrow(b)
 	b.arrow:SetTexCoord(unpack(ARROW[state]))
 end
 
--- values: { { key, label }, ... }; get() returns the current key, set(key) chooses one
+-- values: { { key, label }, ... }, or a function giving them (a list that changes, read on each
+-- opening); get() returns the current key, set(key) chooses one
 function ns.Dropdown(parent, width, values, get, set)
+	local source = values
+	local function current() return type(source) == "function" and source() or source end
+	values = current()
 	local b = CreateFrame("Button", nil, parent)
 	b:SetWidth(width); b:SetHeight(24)
 	dressHolder(b)
@@ -397,18 +401,23 @@ function ns.Dropdown(parent, width, values, get, set)
 	list:Hide()
 	b.list = list
 	-- A long list (every font other addons registered) shows MAX_ROWS rows at a time and scrolls with
-	-- the mouse wheel: the rows stay put and take the values from `first` on.
-	local shown = math.min(#values, MAX_ROWS)
-	local rows, widest, first = {}, 0, 1
+	-- the mouse wheel: the rows stay put and take the values from `first` on. Rows are made as a
+	-- longer list needs them.
+	local rows, first, shown = {}, 1, 0
 	local function fill()
 		for i, row in ipairs(rows) do
-			local pair = values[first + i - 1]
-			row.key = pair[1]
-			row.text:SetText(pair[2])
-			if pair[1] == get() then row.check:Show() else row.check:Hide() end
+			local pair = i <= shown and values[first + i - 1]
+			if pair then
+				row.key = pair[1]
+				row.text:SetText(pair[2])
+				if pair[1] == get() then row.check:Show() else row.check:Hide() end
+				row:Show()
+			else
+				row:Hide()
+			end
 		end
 	end
-	for i = 1, shown do
+	local function makeRow(i)
 		local row = CreateFrame("Button", nil, list)
 		row:SetHeight(ROW_H)
 		row:SetPoint("TOPLEFT", list, "TOPLEFT", INSET_X, -INSET_Y - (i - 1) * ROW_H)
@@ -430,12 +439,20 @@ function ns.Dropdown(parent, width, values, get, set)
 		end)
 		rows[i] = row
 	end
-	for _, pair in ipairs(values) do
-		rows[1].text:SetText(pair[2])
-		widest = math.max(widest, rows[1].text:GetStringWidth())
+	-- sizes the list to the values it holds now
+	local function size()
+		values = current()
+		shown = math.min(#values, MAX_ROWS)
+		for i = #rows + 1, math.max(shown, 1) do makeRow(i) end
+		local widest = 0
+		for _, pair in ipairs(values) do
+			rows[1].text:SetText(pair[2])
+			widest = math.max(widest, rows[1].text:GetStringWidth())
+		end
+		list:SetWidth(math.max(width + 4, widest + CHECK_W + 2 + INSET_X * 2 + 8))
+		list:SetHeight(shown * ROW_H + INSET_Y * 2)
 	end
-	list:SetWidth(math.max(width + 4, widest + CHECK_W + 2 + INSET_X * 2 + 8))
-	list:SetHeight(shown * ROW_H + INSET_Y * 2)
+	size()
 	list:EnableMouseWheel(true)
 	list:SetScript("OnMouseWheel", function(_, delta)
 		first = math.max(1, math.min(#values - shown + 1, first - delta * 3))
@@ -454,6 +471,7 @@ function ns.Dropdown(parent, width, values, get, set)
 			return
 		end
 		closeList()
+		size()
 		-- open scrolled to the current choice
 		first = 1
 		for i, pair in ipairs(values) do
@@ -468,7 +486,8 @@ function ns.Dropdown(parent, width, values, get, set)
 
 	-- shows the current choice; the caller runs it after every change
 	function b:Refresh()
-		for _, pair in ipairs(values) do
+		label:SetText("")
+		for _, pair in ipairs(current()) do
 			if pair[1] == get() then label:SetText(pair[2]) end
 		end
 	end

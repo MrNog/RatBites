@@ -7,8 +7,9 @@ local ADDON, ns = ...
 
 local LINE_GAP = 4
 local FADE = 0.5   -- a line fades over its last half second
+local BOX_CRIT = 1.4  -- the biggest a line gets in a box, against a normal hit
 local EDGE_PAD = 8  -- left- or right-aligned lines keep this far from the box's side
-local NAMES = { mine = "My box", received = "Received box" }
+local NAMES = { mine = "Output box", received = "Input box" }
 
 local boxes = {}
 local unlocked = false
@@ -81,7 +82,7 @@ local function Layout(box)
 	local room, offset = box:GetHeight(), 0
 	for i = 1, #box.lines do
 		local line = box.lines[i]
-		local h = math.max(line.size, ns.SIZE * ns.db.scale * ns.db.iconScale) + LINE_GAP
+		local h = math.max(line.size, ns.SIZE * ns.db.scale * ns.db.boxes[box.key].scale) + LINE_GAP
 		if offset + h > room then
 			for j = #box.lines, i, -1 do Drop(box, j) end
 			return
@@ -97,17 +98,21 @@ local function Layout(box)
 	end
 end
 
+-- a line that has faded out drops, and the lines after it close up the gap it leaves
 local function Fade(box)
 	local now, life = GetTime(), ns.db.boxes[box.key].time
+	local dropped
 	for i = #box.lines, 1, -1 do
 		local line = box.lines[i]
 		local age = now - line.at
 		if age >= life then
 			Drop(box, i)
+			dropped = true
 		elseif age > life - FADE then
 			line:SetAlpha((life - age) / FADE)
 		end
 	end
+	if dropped then Layout(box) end
 end
 
 local function Create(key)
@@ -156,22 +161,33 @@ local function Create(key)
 end
 
 -- A line's text: its number (the merged total when it has one) or word, "xN" once merged, and the
--- shields its heals made in shield blue at the end.
+-- shields its heals made in shield blue at the end, in brackets: "+11.0k (+240)".
 local SHIELD_HEX = "8cd1ff"
+local function ShieldText(amount)
+	return " |cff" .. SHIELD_HEX .. "(+" .. ns.Abbrev(amount) .. ")|r"
+end
+
 local function LineText(line)
 	local s = line.total and (line.sign or "") .. ns.Abbrev(line.total) or line.label
 	if line.count > 1 then s = s .. " x" .. line.count end
-	if line.shield then s = s .. " |cff" .. SHIELD_HEX .. "+" .. ns.Abbrev(line.shield) .. "|r" end
+	if line.shield then s = s .. ShieldText(line.shield) end
 	return s
 end
 
--- a shield made by a heal joins the line that heal is on (box line or floating number)
+-- A shield made by a heal joins the line that heal is on (box line or floating number). A big crit
+-- drawn from images keeps them, and the shield goes after them as normal-sized text.
 function ns.JoinShield(el, amount)
 	el.shield = (el.shield or 0) + amount
 	if el.count then
 		el.text:SetText(LineText(el))
+	elseif el.useDigits then
+		el.text:SetFont(ns.FontPath(), math.floor(ns.SIZE * ns.db.scale + 0.5), "OUTLINE")
+		el.text:SetText(ShieldText(el.shield))
+		el.text:ClearAllPoints()
+		el.text:SetPoint("LEFT", el.glyphs[#el.glyphLabel], "RIGHT", 2, 0)
+		el.text:Show()
 	else
-		el.text:SetText(el.label .. " |cff" .. SHIELD_HEX .. "+" .. ns.Abbrev(el.shield) .. "|r")
+		el.text:SetText(el.label .. ShieldText(el.shield))
 	end
 end
 
@@ -187,11 +203,13 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	-- that line is, so repeats can't push other lines out of the box.
 	local last
 	local window = db.boxes[key].merge
-	if icon and window > 0 then
+	-- a crit (drawn with the thick outline) always keeps a line of its own
+	if icon and window > 0 and not color.thick then
 		for _, line in ipairs(box.lines) do
 			-- numbers of one kind (sign: damage "", heals "+", taken "-") add up whatever their colour,
-			-- crits included; a word only joins the same word
-			local same = line.sign == sign and (amount and line.total or (not amount and line.label == label))
+			-- crits apart; a word only joins the same word
+			local same = not line.color.thick and line.sign == sign
+				and (amount and line.total or (not amount and line.label == label))
 			if line.iconPath == icon and same and GetTime() - line.first < window then
 				last = line
 				break
@@ -204,6 +222,16 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 		last.text:SetText(LineText(last))
 		last.at = GetTime()
 		last:SetAlpha(1)
+		-- it starts its time again, so it moves up with the newest: lines stay newest to oldest and
+		-- the next to fade is always at the far end
+		for i, line in ipairs(box.lines) do
+			if line == last then
+				table.remove(box.lines, i)
+				break
+			end
+		end
+		table.insert(box.lines, 1, last)
+		Layout(box)
 		ns.lastShown = last
 		return last
 	end
@@ -211,7 +239,11 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	line.label, line.iconPath, line.color, line.count = label, icon, color, 1
 	line.total, line.sign, line.first, line.shield = amount, sign, GetTime(), nil
 	line.serial = ns.NextSerial()
-	size = size * db.scale
+	-- a crit in a box is only a little bigger than its neighbours (the plates show it full size), so
+	-- one crit can't fill the box; its line keeps the room its text takes
+	-- the box's own text size on top of the Look page's
+	local boxScale = db.boxes[key].scale
+	size = math.min(size, ns.SIZE * BOX_CRIT) * db.scale * boxScale
 	line.text:SetFont(ns.FontPath(), size, color.thick and "THICKOUTLINE" or "OUTLINE")
 	line.text:SetText(label)
 	line.text:SetTextColor(color[1], color[2], color[3])
@@ -219,7 +251,7 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 		line.icon:SetTexture(icon)
 		-- one icon size for every line, so the icons stack in a straight column and crits grow only
 		-- their text
-		local iconSize = ns.SIZE * db.scale * db.iconScale
+		local iconSize = ns.SIZE * db.scale * boxScale
 		line.icon:SetWidth(iconSize); line.icon:SetHeight(iconSize)
 		line.icon:Show(); line.edge:Show()
 	else
@@ -253,6 +285,14 @@ function ns.SetBoxesUnlocked(on)
 end
 
 -- after a setting changes: the scroll direction or the scale may move every line
+-- where a box's floating numbers start: the middle of its bottom edge, in UIParent units
+function ns.BoxSpot(key)
+	local box = boxes[key]
+	if not box then return end
+	local x, y = box:GetCenter(), box:GetBottom()
+	if x and y then return x, y end
+end
+
 function ns.RelayoutBoxes()
 	for _, box in pairs(boxes) do Layout(box) end
 end
@@ -268,4 +308,9 @@ end
 ns.On("PLAYER_LOGIN", function()
 	boxes.mine = Create("mine")
 	boxes.received = Create("received")
+end)
+
+-- boxes left unlocked would cover the fight with their frames and catch clicks: a fight locks them
+ns.On("PLAYER_REGEN_DISABLED", function()
+	if unlocked then ns.SetBoxesUnlocked(false) end
 end)

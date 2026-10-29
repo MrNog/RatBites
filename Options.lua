@@ -1,20 +1,23 @@
 local ADDON, ns = ...
 
--- RatBites' settings window: five tabs along the top (General, Look, Motion, Show, Boxes), each a
--- single column of roomy one-line rows, the setting's name on the left and its control on the right.
+-- RatBites' settings window: a side menu (Numbers: Show, Spells, Look, Boxes, saved in the profile;
+-- Setup: Profiles and App), the open page on its right as one column of one-line rows, the setting's
+-- name on the left and its control on the right, and under it a bar with the profile in use, Test
+-- and Move boxes.
 
 local C, rgb
 local panel
 local refreshers = {}
 
-local WIDTH = 640
-local MARGIN = 30
-local COL_W = WIDTH - MARGIN * 2
-local ROW_H = 36
+local WIDTH = 780
+local SIDE_W = 190      -- the side menu
+local MARGIN = 26       -- a page's margin, inside the area right of the menu
+local COL_W = WIDTH - SIDE_W - MARGIN * 2
+local ROW_H = 34
 local CONTROL_W = 170   -- dropdowns and buttons
-local TOP = -96         -- where a page's first section starts, under the tabs
+local TOP = -46         -- where a page's first section starts, under the title bar
+local FOOT_H = 46       -- the bar along the bottom
 local stripe = false    -- every other row in a section gets a faint band
-local lastRow           -- the row the last helper made, for pages that show or relabel it later
 
 local function Changed()
 	for _, fn in ipairs(refreshers) do fn() end
@@ -36,7 +39,7 @@ end
 -- a gold heading with a hairline to the column's end; first = the page's top one, without the gap
 -- note: one short grey line under the heading saying what the section is for
 local function Section(parent, y, text, first, note)
-	if not first then y = y - 22 end
+	if not first then y = y - 20 end
 	local fs = Text(parent, 11, C.accentText)
 	fs:SetPoint("TOPLEFT", MARGIN, y)
 	fs:SetText(text:upper())
@@ -76,28 +79,36 @@ local function Row(parent, y, label)
 	fs:SetPoint("LEFT", 10, 0)
 	fs:SetText(label)
 	row.label = fs
-	lastRow = row
 	return row
+end
+
+-- a checkbox on a frame that toggles it when clicked
+local function Tick(host, get, set)
+	local box, tick = ns.CheckBox(host, 20)
+	host:SetScript("OnClick", function() set(not get()); Changed() end)
+	refreshers[#refreshers + 1] = function()
+		if get() then tick:Show() else tick:Hide() end
+	end
+	return box
 end
 
 -- checkbox: retail's dark box with a bronze edge and a yellow tick; the whole row toggles it
 local function Check(parent, y, label, get, set)
 	local row = Row(parent, y, label)
-	local box, tick = ns.CheckBox(row, 20)
-	box:SetPoint("RIGHT", -8, 0)
-	row:SetScript("OnClick", function() set(not get()); Changed() end)
-	refreshers[#refreshers + 1] = function()
-		if get() then tick:Show() else tick:Hide() end
-	end
+	Tick(row, get, set):SetPoint("RIGHT", -8, 0)
 	return y - ROW_H
 end
 
--- a dropdown on the right of its row, showing the current choice
+-- a dropdown showing the current choice; values may be a function (a list that changes)
+local function DropControl(parent, width, values, get, set)
+	local drop = ns.Dropdown(parent, width, values, get, function(key) set(key); Changed() end)
+	refreshers[#refreshers + 1] = function() drop:Refresh() end
+	return drop
+end
+
 local function Choice(parent, y, label, values, get, set)
 	local row = Row(parent, y, label)
-	local drop = ns.Dropdown(row, CONTROL_W, values, get, function(key) set(key); Changed() end)
-	drop:SetPoint("RIGHT", -8, 0)
-	refreshers[#refreshers + 1] = function() drop:Refresh() end
+	DropControl(row, CONTROL_W, values, get, set):SetPoint("RIGHT", -8, 0)
 	return y - ROW_H
 end
 
@@ -116,16 +127,17 @@ local function SignButton(parent, plus)
 	return b
 end
 
--- [-] value [+] on the right of its row
-local function Stepper(parent, y, label, lo, hi, step, fmt, get, set)
-	local row = Row(parent, y, label)
-	local plus = SignButton(row, true)
-	plus:SetPoint("RIGHT", -8, 0)
-	local value = Text(row, 13, C.accentText)
-	value:SetWidth(58)
+-- [-] value [+], as one frame
+local function StepControl(parent, lo, hi, step, fmt, get, set)
+	local f = CreateFrame("Frame", nil, parent)
+	f:SetWidth(114); f:SetHeight(22)
+	local minus = SignButton(f, false)
+	minus:SetPoint("LEFT", 0, 0)
+	local plus = SignButton(f, true)
+	plus:SetPoint("RIGHT", 0, 0)
+	local value = Text(f, 13, C.accentText)
+	value:SetPoint("LEFT", minus, "RIGHT", 4, 0)
 	value:SetPoint("RIGHT", plus, "LEFT", -4, 0)
-	local minus = SignButton(row, false)
-	minus:SetPoint("RIGHT", value, "LEFT", -4, 0)
 	local function bump(d)
 		local v = math.floor((get() + d) / step + 0.5) * step
 		if v < lo - step / 2 or v > hi + step / 2 then return end
@@ -134,17 +146,18 @@ local function Stepper(parent, y, label, lo, hi, step, fmt, get, set)
 	minus:SetScript("OnClick", function() bump(-step) end)
 	plus:SetScript("OnClick", function() bump(step) end)
 	refreshers[#refreshers + 1] = function() value:SetText(fmt(get())) end
+	return f
+end
+
+local function Stepper(parent, y, label, lo, hi, step, fmt, get, set)
+	local row = Row(parent, y, label)
+	StepControl(row, lo, hi, step, fmt, get, set):SetPoint("RIGHT", -8, 0)
 	return y - ROW_H
 end
 
--- a red button on the right of its row; label() gives its text after each change
-local function Action(parent, y, text, onClick, label)
-	local row = Row(parent, y, text)
-	local b = ns.RedButton(row, "", CONTROL_W, 22)
-	b:SetPoint("RIGHT", -8, 0)
-	b:SetScript("OnClick", function() onClick(); Changed() end)
-	refreshers[#refreshers + 1] = function() b:SetText(label()) end
-	return y - ROW_H
+-- a tick for a setting that holds one of two values: ticked is on, unticked off
+local function either(on, off, get, set)
+	return function() return get() == on end, function(v) set(v and on or off) end
 end
 
 -- a setting by its path in the active profile ("show", "heal"): a getter and a setter that read
@@ -160,36 +173,62 @@ local function flag(...)
 	return function() return holder()[last] end, function(v) holder()[last] = v end
 end
 
--- The Where grid: one row per kind of number, one column per place, a checkbox in every cell.
-local GRID_LABEL = 230   -- room for the row names
-local function Grid(parent, y, columns, rows)
+-- an app setting: the same for every profile
+local function app(key)
+	return function() return ns.app[key] end, function(v) ns.app[key] = v end
+end
+
+-- A table of controls: one row per setting, one column per thing it's set for, with the columns'
+-- names over them. cell(row, column, x, y) puts a row's control for a column, centred on x, y.
+local GRID_LABEL = 200   -- room for the row names
+local function Table(parent, y, columns, rows, cell)
 	local colW = (COL_W - GRID_LABEL) / #columns
 	local function centre(i) return MARGIN + GRID_LABEL + (i - 0.5) * colW end
 	for i, col in ipairs(columns) do
 		local head = Text(parent, 12, C.accentHi)
 		head:SetWidth(colW - 4)
 		head:SetJustifyH("CENTER")
-		head:SetPoint("BOTTOM", parent, "TOPLEFT", centre(i), y - 30)
+		head:SetPoint("BOTTOM", parent, "TOPLEFT", centre(i), y - 22)
 		head:SetText(col[2])
 	end
-	y = y - 34
+	y = y - 26
 	for _, def in ipairs(rows) do
 		local row = Row(parent, y, def[2])
-		for i, col in ipairs(columns) do
-			local get, set = flag("route", def[1], col[1])
-			local cell = CreateFrame("Button", nil, row)
-			cell:SetWidth(30); cell:SetHeight(30)
-			cell:SetPoint("CENTER", parent, "TOPLEFT", centre(i), y - ROW_H / 2)
-			local box, tick = ns.CheckBox(cell, 20)
-			box:SetPoint("CENTER")
-			cell:SetScript("OnClick", function() set(not get()); Changed() end)
-			refreshers[#refreshers + 1] = function()
-				if get() then tick:Show() else tick:Hide() end
-			end
-		end
+		for i, col in ipairs(columns) do cell(row, def, col, centre(i), y - ROW_H / 2) end
 		y = y - ROW_H
 	end
 	return y
+end
+
+-- a Where grid: a checkbox in every cell, db.route[row][column]
+local function Grid(parent, y, columns, rows)
+	return Table(parent, y, columns, rows, function(row, def, col, x, cy)
+		local cell = CreateFrame("Button", nil, row)
+		cell:SetWidth(30); cell:SetHeight(30)
+		cell:SetPoint("CENTER", parent, "TOPLEFT", x, cy)
+		Tick(cell, flag("route", def[1], col[1])):SetPoint("CENTER")
+	end)
+end
+
+-- ticks three to a line, each with its name after it
+local function Ticks(parent, y, list)
+	local per = 3
+	local w = (COL_W + 16) / per
+	for i, def in ipairs(list) do
+		local col, line = (i - 1) % per, math.floor((i - 1) / per)
+		local cell = CreateFrame("Button", nil, parent)
+		cell:SetWidth(w - 4); cell:SetHeight(30)
+		cell:SetPoint("TOPLEFT", MARGIN - 8 + col * w, y - line * 30)
+		local hover = cell:CreateTexture(nil, "HIGHLIGHT")
+		hover:SetTexture(ns.FLAT)
+		hover:SetVertexColor(1, 1, 1, 0.05)
+		hover:SetAllPoints(cell)
+		Tick(cell, def[2], def[3]):SetPoint("LEFT", 8, 0)
+		local fs = Text(cell, 14)
+		fs:SetPoint("LEFT", 36, 0)
+		fs:SetText(def[1])
+	end
+	return y - math.ceil(#list / per) * 30
 end
 
 local function Percent(v) return format("%d%%", v * 100 + 0.5) end
@@ -199,10 +238,10 @@ local function Percent(v) return format("%d%%", v * 100 + 0.5) end
 -- the rows' names are. The file is 1024x512; the picture is 4:3.
 local BG_TEX = [[Interface\AddOns\RatBites\Media\settings-bg]]
 local BG_ASPECT = 4 / 3
+local BG_ART = 0.5  -- how strongly the art shows through
 
 local function PaintArt(art, wash, w, h)
-	local db = ns.db
-	local a = db.bgOn and (db.bgArt or 0) or 0
+	local a = ns.app.bgOn and BG_ART or 0
 	if a <= 0 then art:Hide(); wash:Hide(); return end
 	art:SetTexture(BG_TEX)
 	local want = w / h
@@ -225,109 +264,97 @@ end
 -- the pages
 --------------------------------------------------------------------------------
 
-local function GeneralPage(page)
-	local y = Section(page, TOP, "RatBites", true, "Turn it on or off, and try it out without a fight.")
-	y = Check(page, y, "Enabled", flag("enabled"))
-	y = Action(page, y, "Test numbers",
-		function() ns.SetTestLoop(not ns.TestLooping()) end,
-		function() return ns.TestLooping() and "Stop" or "Start" end)
-	y = Check(page, y, "Hide the game's own numbers", flag("hideBlizzard"))
-	y = Section(page, y, "Window", nil, "This settings window and the minimap button.")
-	y = Check(page, y, "Minimap button", flag("minimapButton"))
-	y = Check(page, y, "Background art", flag("bgOn"))
-	y = Stepper(page, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end, flag("bgArt"))
+local function ShowPage(page)
+	local y = Section(page, TOP, "What you do", true)
+	y = Grid(page, y,
+		{ { "plate", "Their plate" }, { "me", "Over me" }, { "mine", "Output box" } },
+		{ { "dmg", "My damage" }, { "heal", "My heals" } })
+	y = Check(page, y, "No nameplate? Use the Output box", flag("noPlateToBox"))
+	y = Section(page, y, "What lands on you")
+	y = Grid(page, y,
+		{ { "me", "Over me" }, { "recv", "Input box" } },
+		{ { "healMe", "Heals on me" }, { "dmgMe", "Damage on me" }, { "powerMe", "Mana, energy, rage" } })
+	y = Section(page, y, "Which hits")
+	local ticks = {}
+	for _, def in ipairs({ { "Crits", "crit" }, { "Normal hits", "normal" }, { "Auto-attacks", "swing" },
+		{ "DoTs", "dot" }, { "Pet", "pet" }, { "Misses", "miss" }, { "Overheal", "overheal" } }) do
+		local get, set = flag("show", def[2])
+		ticks[#ticks + 1] = { def[1], get, set }
+	end
+	y = Ticks(page, y, ticks)
+	y = Choice(page, y, "Shields from my heals",
+		{ { "heal", "+11k (+240)" }, { "line", "+11k   +240" }, { "off", "+11k" } },
+		function()
+			local db = ns.db
+			return not db.show.shield and "off" or db.joinShields and "heal" or "line"
+		end,
+		function(v)
+			local db = ns.db
+			db.show.shield, db.joinShields = v ~= "off", v == "heal"
+		end)
 	return y
 end
 
 local function LookPage(page)
 	local y = Section(page, TOP, "Text", true)
 	y = Choice(page, y, "Font", ns.FontList(), flag("font"))
-	y = Stepper(page, y, "Text size", 0.5, 2, 0.1, Percent, flag("scale"))
-	y = Choice(page, y, "Number format",
-		{ { "short", "12.4k" }, { "full", "12,431" }, { "raw", "12431" } },
-		flag("numbers"))
-	y = Section(page, y, "Icons")
+	y = Stepper(page, y, "Size", 0.5, 2, 0.1, Percent, flag("scale"))
+	y = Choice(page, y, "Align", { { "center", "Center" }, { "left", "Left" }, { "right", "Right" } },
+		flag("align"))
+	y = Check(page, y, "Short numbers (12.4k)", either("short", "full", flag("numbers")))
 	y = Check(page, y, "Spell icons", flag("icons"))
-	y = Stepper(page, y, "Icon size", 0.5, 2, 0.1, Percent, flag("iconScale"))
-	y = Section(page, y, "Colors")
-	y = Action(page, y, "Color examples",
-		function() ns.ToggleLegend() end,
-		function() return "Show (/bites colors)" end)
-	y = Choice(page, y, "Critical hits",
-		{ { "pop", "Pop" }, { "big", "Bigger" }, { "plain", "Plain" } },
-		flag("critStyle"))
-	y = Check(page, y, "Big hits in gold", flag("bigGold"))
-	y = Choice(page, y, "My class color for",
-		{ { "off", "Off" }, { "normal", "Normal hits" }, { "crit", "Crits" } },
-		flag("classColorFor"))
-	return y
-end
-
-local function MotionPage(page)
-	local y = Section(page, TOP, "Floating numbers", true)
-	y = Choice(page, y, "Animation",
-		{ { "arc", "Arc" }, { "rise", "Rise" }, { "stay", "Stay" }, { "fountain", "Fountain" }, { "fall", "Fall" } },
-		flag("animation"))
-	y = Choice(page, y, "Sideways drift",
-		{ { "none", "None" }, { "tight", "Tight" }, { "normal", "Normal" }, { "wide", "Wide" } },
-		flag("spread"))
-	y = Stepper(page, y, "Travel distance", 20, 150, 10, function(v) return format("%d", v) end, flag("height"))
+	y = Check(page, y, "Class color on my hits", either("normal", "off", flag("classColorFor")))
+	y = Section(page, y, "Crits")
+	y = Check(page, y, "Crits pop", either("pop", "big", flag("critStyle")))
+	y = Stepper(page, y, "Crit size", 2, 30, 1, function(v) return format("%gx", v) end, flag("critSize"))
+	y = Section(page, y, "Motion")
+	local moves = { { "arc", "Arc" }, { "rise", "Rise" }, { "stay", "Stay" } }
+	y = Choice(page, y, "Damage", moves, flag("animation"))
+	y = Choice(page, y, "Heals", moves, flag("healAnimation"))
 	y = Stepper(page, y, "Time on screen", 0.8, 4, 0.1, function(v) return format("%.1fs", v) end, flag("duration"))
 	return y
 end
 
-local function WherePage(page)
-	local y = Section(page, TOP, "Where each number goes", true,
-		"Tick every place you want it. Any mix works; nothing ticked hides it.")
-	y = Grid(page, y,
-		{ { "plate", "Over their nameplate" }, { "me", "Over me" }, { "mine", "My box" }, { "recv", "Received box" } },
-		{ { "dmg", "My damage (on enemies)" }, { "heal", "My heals (on others)" },
-			{ "healMe", "Heals on me (self-heals too)" }, { "dmgMe", "Damage on me" } })
-	y = Section(page, y, "No nameplate", nil, "Pets, totems and far-away players have no nameplate.")
-	y = Check(page, y, "Put it in My box instead", flag("noPlateToBox"))
-	return y
-end
-
-local function WhatPage(page)
-	local y = Section(page, TOP, "Your hits", true, "Untick what you don't want to see.")
-	y = Check(page, y, "Normal hits", flag("show", "normal"))
-	y = Check(page, y, "Critical hits", flag("show", "crit"))
-	y = Check(page, y, "Auto-attacks", flag("show", "swing"))
-	y = Check(page, y, "Spells and abilities", flag("show", "spell"))
-	y = Check(page, y, "Damage over time", flag("show", "dot"))
-	y = Check(page, y, "Pet damage", flag("show", "pet"))
-	y = Check(page, y, "Misses (dodge, parry ...)", flag("show", "miss"))
-	y = Section(page, y, "Your heals", nil, "Heals and the shields they make.")
-	y = Check(page, y, "Shields", flag("show", "shield"))
-	y = Check(page, y, "Join shields to the heal that made them", flag("joinShields"))
-	y = Check(page, y, "Overheal (dim)", flag("show", "overheal"))
-	return y
-end
-
+-- the two boxes side by side, the same four settings for each
 local function BoxesPage(page)
-	local y = Section(page, TOP, "Both boxes", true)
-	y = Action(page, y, "Move and resize boxes",
-		function() ns.SetBoxesUnlocked(not ns.BoxesUnlocked()) end,
-		function() return ns.BoxesUnlocked() and "Lock" or "Unlock" end)
-	-- the same four rows for each box, on its own settings
-	for _, def in ipairs({ { "mine", "My box: what you do" }, { "received", "Received box: what lands on you" } }) do
-		y = Section(page, y, def[2])
-		y = Choice(page, y, "New lines come in at",
-			{ { "up", "The bottom" }, { "down", "The top" } },
-			flag("boxes", def[1], "scroll"))
-		y = Choice(page, y, "Text alignment",
-			{ { "left", "Left" }, { "center", "Center" }, { "right", "Right" } },
-			flag("boxes", def[1], "align"))
-		y = Choice(page, y, "Merge repeats within",
-			{ { 0, "Off" }, { 0.5, "0.5 sec" }, { 1, "1 sec" }, { 2, "2 sec" }, { 3, "3 sec" } },
-			flag("boxes", def[1], "merge"))
-		y = Stepper(page, y, "Each line stays", 2, 10, 1, function(v) return format("%ds", v) end, flag("boxes", def[1], "time"))
-	end
+	local y = Section(page, TOP, "Boxes", true, "Move and resize them with Move boxes, below.")
+	local controls = {
+		style = function(row, key, x, cy)
+			DropControl(row, 120, { { "scroll", "Scroll" }, { "arc", "Arc" }, { "rise", "Rise" }, { "stay", "Stay" },
+				{ "pop", "Pop" } }, flag("boxes", key, "style")):SetPoint("CENTER", page, "TOPLEFT", x, cy)
+		end,
+		scroll = function(row, key, x, cy)
+			DropControl(row, 120, { { "up", "Bottom" }, { "down", "Top" } }, flag("boxes", key, "scroll"))
+				:SetPoint("CENTER", page, "TOPLEFT", x, cy)
+		end,
+		align = function(row, key, x, cy)
+			DropControl(row, 120, { { "left", "Left" }, { "center", "Center" }, { "right", "Right" } },
+				flag("boxes", key, "align")):SetPoint("CENTER", page, "TOPLEFT", x, cy)
+		end,
+		merge = function(row, key, x, cy)
+			local cell = CreateFrame("Button", nil, row)
+			cell:SetWidth(30); cell:SetHeight(30)
+			cell:SetPoint("CENTER", page, "TOPLEFT", x, cy)
+			Tick(cell, either(1, 0, flag("boxes", key, "merge"))):SetPoint("CENTER")
+		end,
+		scale = function(row, key, x, cy)
+			StepControl(row, 0.5, 2, 0.1, Percent, flag("boxes", key, "scale"))
+				:SetPoint("CENTER", page, "TOPLEFT", x, cy)
+		end,
+		time = function(row, key, x, cy)
+			StepControl(row, 2, 10, 1, function(v) return format("%ds", v) end, flag("boxes", key, "time"))
+				:SetPoint("CENTER", page, "TOPLEFT", x, cy)
+		end,
+	}
+	y = Table(page, y - 4,
+		{ { "mine", "Output box" }, { "received", "Input box" } },
+		{ { "style", "Shows as" }, { "scale", "Text size" }, { "scroll", "New lines at" }, { "align", "Align" }, { "merge", "Merge repeats (x2, x3 ...)" },
+			{ "time", "Each line stays" } },
+		function(row, def, col, x, cy) controls[def[1]](row, col[1], x, cy) end)
 	return y
 end
 
--- Profiles live in Core.lua; this page picks this character's, and one per talent spec when dual
--- spec switching is on.
+-- Profiles live in Core.lua; this page picks this character's, and one for its second spec.
 -- A small window asking before something that replaces a whole profile: the question, then the
 -- action's button and Cancel. Esc cancels too.
 local confirm
@@ -363,72 +390,348 @@ local function Confirm(question, yes, onYes)
 	confirm:Show()
 end
 
-local function ProfilesPage(page)
-	local names = {}
-	for _, name in ipairs(ns.PROFILES) do names[#names + 1] = { name, name } end
-	local copyFrom = { { "none", "Choose a profile" } }
-	for _, pair in ipairs(names) do copyFrom[#copyFrom + 1] = pair end
 
-	-- Which profile: one choice, or with talent switching one for the primary and one for the
-	-- secondary spec, marked while it is the one in use. Both kinds of row sit in the same place;
-	-- only the ones that apply show.
-	local y = Section(page, TOP, "Which profile", true)
-	y = Check(page, y, "Switch profile with my talents",
-		function() return ns.char.dual end,
-		function(v) ns.char.dual = v; ns.UseProfile() end)
-	Choice(page, y, "Profile", names, ns.ActiveProfile, ns.SetProfile)
-	local single = lastRow
-	local specRows = {}
-	for spec = 1, 2 do
-		y = Choice(page, y, "", names,
-			function() return ns.char.spec[spec] end,
-			function(v) ns.char.spec[spec] = v; ns.UseProfile() end)
-		specRows[spec] = lastRow
+-- Your spells in a grid two wide that scrolls with the mouse wheel: Melee and your class's spells
+-- that make numbers, then the procs and effects you've made numbers with. A tick shows a spell,
+-- untick it to hide it. The grid is read again each time the window refreshes.
+local SPELL_LINES, SPELL_COLS = 12, 2
+
+-- The spells that make numbers, by class, by their English names (every rank shares its name). The
+-- page lists the ones in your spellbook. Shields, buffs and spells that only pass on a share of other
+-- heals are left out: their cast makes no number of its own.
+local CLASS_SPELLS = {
+	DEATHKNIGHT = {
+		"Blood Boil", "Blood Strike", "Corpse Explosion", "Death and Decay", "Death Coil", "Death Pact",
+		"Death Strike", "Frost Strike", "Heart Strike", "Howling Blast", "Icy Touch", "Obliterate",
+		"Plague Strike", "Rune Strike", "Rune Tap", "Scourge Strike", "Unholy Blight",
+	},
+	DRUID = {
+		"Claw", "Entangling Roots", "Faerie Fire (Feral)", "Ferocious Bite", "Healing Touch", "Hurricane",
+		"Insect Swarm", "Lacerate", "Lifebloom", "Maim", "Mangle (Bear)", "Mangle (Cat)", "Maul",
+		"Moonfire", "Nourish", "Pounce", "Rake", "Ravage", "Regrowth", "Rejuvenation", "Rip", "Shred",
+		"Starfall", "Starfire", "Swiftmend", "Swipe (Bear)", "Swipe (Cat)", "Thorns", "Tranquility",
+		"Typhoon", "Wild Growth", "Wrath",
+	},
+	HUNTER = {
+		"Aimed Shot", "Arcane Shot", "Auto Shot", "Black Arrow", "Chimera Shot", "Counterattack",
+		"Explosive Shot", "Explosive Trap", "Immolation Trap", "Kill Shot", "Mongoose Bite", "Multi-Shot",
+		"Raptor Strike", "Scatter Shot", "Serpent Sting", "Silencing Shot", "Steady Shot", "Volley",
+		"Wyvern Sting",
+	},
+	MAGE = {
+		"Arcane Barrage", "Arcane Blast", "Arcane Explosion", "Arcane Missiles", "Blast Wave", "Blizzard",
+		"Cone of Cold", "Dragon's Breath", "Fire Blast", "Fireball", "Flamestrike", "Frost Nova",
+		"Frostbolt", "Frostfire Bolt", "Ice Lance", "Living Bomb", "Pyroblast", "Scorch", "Shoot",
+	},
+	PALADIN = {
+		"Avenger's Shield", "Consecration", "Crusader Strike", "Divine Storm", "Exorcism",
+		"Flash of Light", "Hammer of the Righteous", "Hammer of Wrath", "Hand of Reckoning", "Holy Light",
+		"Holy Shield", "Holy Shock", "Holy Wrath", "Lay on Hands", "Retribution Aura", "Seal of Command",
+		"Seal of Corruption", "Seal of Light", "Seal of Righteousness", "Seal of Vengeance",
+		"Seal of Wisdom", "Shield of Righteousness", "Divine Plea",
+	},
+	PRIEST = {
+		"Binding Heal", "Circle of Healing", "Desperate Prayer", "Devouring Plague", "Divine Hymn",
+		"Flash Heal", "Greater Heal", "Heal", "Holy Fire", "Holy Nova", "Lesser Heal", "Mind Blast",
+		"Mind Flay", "Mind Sear", "Penance", "Prayer of Healing", "Prayer of Mending", "Renew",
+		"Shadow Word: Death", "Shadow Word: Pain", "Shoot", "Smite", "Vampiric Touch", "Dispersion",
+		"Hymn of Hope",
+	},
+	ROGUE = {
+		"Ambush", "Backstab", "Deadly Throw", "Envenom", "Eviscerate", "Fan of Knives", "Garrote",
+		"Ghostly Strike", "Gouge", "Hemorrhage", "Killing Spree", "Mutilate", "Rupture", "Shiv",
+		"Sinister Strike", "Throw",
+	},
+	SHAMAN = {
+		"Chain Heal", "Chain Lightning", "Earth Shield", "Earth Shock", "Fire Nova", "Flame Shock",
+		"Frost Shock", "Healing Stream Totem", "Healing Wave", "Lava Burst", "Lava Lash",
+		"Lesser Healing Wave", "Lightning Bolt", "Lightning Shield", "Magma Totem", "Riptide",
+		"Searing Totem", "Stormstrike", "Thunderstorm", "Water Shield", "Mana Spring Totem",
+	},
+	WARLOCK = {
+		"Chaos Bolt", "Conflagrate", "Corruption", "Curse of Agony", "Curse of Doom", "Dark Pact",
+		"Death Coil", "Drain Life", "Drain Soul", "Haunt", "Health Funnel", "Hellfire", "Immolate",
+		"Incinerate", "Life Tap", "Rain of Fire", "Searing Pain", "Seed of Corruption", "Shadow Bolt",
+		"Shadowburn", "Shadowflame", "Shadowfury", "Shoot", "Soul Fire", "Unstable Affliction",
+	},
+	WARRIOR = {
+		"Bladestorm", "Bloodthirst", "Cleave", "Concussion Blow", "Devastate", "Enraged Regeneration",
+		"Execute", "Heroic Strike", "Heroic Throw", "Intercept", "Mortal Strike", "Overpower", "Rend",
+		"Revenge", "Shattering Throw", "Shield Slam", "Shockwave", "Slam", "Thunder Clap", "Throw",
+		"Victory Rush", "Whirlwind", "Bloodrage",
+	},
+}
+
+-- Melee, then the class's spells you have: a spell you know by name is one in your spellbook
+local function Spellbook(into)
+	into[MELEE] = select(3, GetSpellInfo(6603)) or true  -- Attack
+	local _, class = UnitClass("player")
+	for _, name in ipairs(CLASS_SPELLS[class] or {}) do
+		local known, _, icon = GetSpellInfo(name)
+		if known then into[name] = icon or true end
 	end
-	refreshers[#refreshers + 1] = function()
-		local dual = ns.char.dual
-		if dual then single:Hide() else single:Show() end
-		local now = GetActiveTalentGroup() or 1
-		for spec, row in ipairs(specRows) do
-			if dual then row:Show() else row:Hide() end
-			local label = spec == 1 and "Primary spec" or "Secondary spec"
-			if spec == now then label = label .. "  |cffffd100· now|r" end
-			row.label:SetText(label)
+end
+
+-- The spellbook's spells by name, then a heading and the procs and effects that made numbers in a
+-- fight but aren't in the spellbook. A heading takes a whole line: the cell beside it stays empty.
+local HEADING, BLANK = {}, {}
+
+local function byName(a, b) return a[1] < b[1] end
+
+local function SpellList(list)
+	local known = {}
+	Spellbook(known)
+	wipe(list)
+	for name, icon in pairs(known) do list[#list + 1] = { name, icon } end
+	table.sort(list, byName)
+	local procs = {}
+	for name, icon in pairs(ns.char.seen) do
+		if not known[name] then procs[#procs + 1] = { name, icon } end
+	end
+	if #procs > 0 then
+		table.sort(procs, byName)
+		while #list % SPELL_COLS ~= 0 do list[#list + 1] = BLANK end
+		list[#list + 1] = HEADING
+		for _ = 2, SPELL_COLS do list[#list + 1] = BLANK end
+		for _, entry in ipairs(procs) do list[#list + 1] = entry end
+	end
+	while #list % SPELL_COLS ~= 0 do list[#list + 1] = BLANK end
+end
+
+local function SpellsPage(page)
+	local y = Section(page, TOP, "Your spells", true,
+		"Where each spell shows: Plates (and over you), Boxes, or untick both to hide it.")
+	local cellW = (COL_W + 16) / SPELL_COLS
+	-- the two ticks' names over each column of spells
+	for col = 1, SPELL_COLS do
+		local right = MARGIN - 8 + col * cellW - 4
+		for _, def in ipairs({ { "Plates", 54 }, { "Boxes", 14 } }) do
+			local head = Text(page, 11, C.accentHi)
+			head:SetPoint("BOTTOM", page, "TOPLEFT", right - def[2], y - 12)
+			head:SetText(def[1])
 		end
 	end
+	y = y - 16
+	local cells, list, first = {}, {}, 1
+	local function fill()
+		SpellList(list)
+		local shown = SPELL_LINES * SPELL_COLS
+		first = math.max(1, math.min(first, #list - shown + 1))
+		for i, cell in ipairs(cells) do
+			local entry = list[first + i - 1]
+			if entry == HEADING then
+				cell.spell = nil
+				cell.label:SetText("PROCS AND EFFECTS")
+				cell.label:SetTextColor(rgb(C.accentText))
+				cell.icon:Hide(); cell.plates:Hide(); cell.boxes:Hide()
+				cell:Show()
+			elseif entry and entry ~= BLANK then
+				cell.spell = entry[1]
+				cell.label:SetText(entry[1])
+				cell.label:SetTextColor(rgb(C.text))
+				cell.icon:SetTexture(type(entry[2]) == "string" and entry[2] or nil)
+				cell.icon:Show(); cell.plates:Show(); cell.boxes:Show()
+				cell.plates:Paint(); cell.boxes:Paint()
+				cell:Show()
+			else
+				cell:Hide()
+			end
+		end
+	end
+	local function scroll(_, delta)
+		first = first - delta * SPELL_COLS * 2
+		fill()
+	end
+	for line = 1, SPELL_LINES do
+		for col = 1, SPELL_COLS do
+			local cell = CreateFrame("Button", nil, page)
+			cell:SetWidth(cellW - 4); cell:SetHeight(ROW_H - 2)
+			cell:SetPoint("TOPLEFT", MARGIN - 8 + (col - 1) * cellW, y - (line - 1) * ROW_H)
+			if line % 2 == 0 then
+				local band = cell:CreateTexture(nil, "BACKGROUND")
+				band:SetTexture(ns.FLAT)
+				band:SetVertexColor(1, 1, 1, 0.03)
+				band:SetAllPoints(cell)
+			end
+			local hover = cell:CreateTexture(nil, "HIGHLIGHT")
+			hover:SetTexture(ns.FLAT)
+			hover:SetVertexColor(1, 1, 1, 0.05)
+			hover:SetAllPoints(cell)
+			cell.icon = cell:CreateTexture(nil, "ARTWORK")
+			cell.icon:SetWidth(22); cell.icon:SetHeight(22)
+			cell.icon:SetPoint("LEFT", 8, 0)
+			cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+			cell.label = Text(cell, 13)
+			cell.label:SetPoint("LEFT", 38, 0)
+			cell.label:SetPoint("RIGHT", -76, 0)
+			cell.label:SetJustifyH("LEFT")
+			-- a tick for plates and one for boxes; ticked = shown there
+			local function Place(key, x)
+				local b = CreateFrame("Button", nil, cell)
+				b:SetWidth(28); b:SetHeight(28)
+				b:SetPoint("CENTER", cell, "RIGHT", -x, 0)
+				local box, tick = ns.CheckBox(b, 20)
+				box:SetPoint("CENTER")
+				function b:Paint()
+					if ns.db[key][cell.spell] then tick:Hide() else tick:Show() end
+				end
+				b:SetScript("OnClick", function()
+					local off = ns.db[key]
+					off[cell.spell] = not off[cell.spell] or nil
+					b:Paint()
+				end)
+				b:EnableMouseWheel(true)
+				b:SetScript("OnMouseWheel", scroll)
+				return b
+			end
+			cell.plates, cell.boxes = Place("noPlates", 54), Place("noBoxes", 14)
+			cell:EnableMouseWheel(true)
+			cell:SetScript("OnMouseWheel", scroll)
+			cells[#cells + 1] = cell
+		end
+	end
+	y = y - SPELL_LINES * ROW_H
+	refreshers[#refreshers + 1] = fill
+	return y
+end
+
+
+-- a name box: dark well, grey hint while empty. It takes the keyboard only when clicked, and lets go
+-- on Escape, Enter and when the window closes.
+local function NameBox(parent, width, hint, onEnter)
+	local well = ns.Skin(CreateFrame("Frame", nil, parent), C.panelD, 0.9)
+	well:SetWidth(width); well:SetHeight(24)
+	local box = CreateFrame("EditBox", nil, well)
+	box:SetAllPoints(well)
+	box:SetAutoFocus(false)
+	box:SetFontObject(ChatFontNormal)
+	box:SetTextInsets(8, 8, 0, 0)
+	box:SetMaxLetters(32)
+	local ghost = Text(well, 13, C.textDim)
+	ghost:SetPoint("LEFT", 8, 0)
+	ghost:SetText(hint)
+	local function sync()
+		if box:GetText() == "" and not box:HasFocus() then ghost:Show() else ghost:Hide() end
+	end
+	box:SetScript("OnTextChanged", sync)
+	box:SetScript("OnEditFocusGained", sync)
+	box:SetScript("OnEditFocusLost", sync)
+	box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+	box:SetScript("OnEnterPressed", function(self) self:ClearFocus(); onEnter() end)
+	parent:HookScript("OnHide", function() box:ClearFocus() end)
+	well.box = box
+	return well
+end
+
+local function ProfilesPage(page)
+	local function names()
+		local list = {}
+		for _, name in ipairs(ns.ProfileNames()) do list[#list + 1] = { name, name } end
+		return list
+	end
+
+	local y = Section(page, TOP, "Profiles", true, "Every character on this account can use any of them.")
+	y = Choice(page, y, "Profile", names,
+		function() return ns.char.profile end,
+		function(v) ns.SetProfile(v) end)
+	y = Choice(page, y, "Second spec uses",
+		function()
+			local list = names()
+			table.insert(list, 1, { "same", "The same" })
+			return list
+		end,
+		function() return ns.char.second or "same" end,
+		function(v) ns.SetProfile(v ~= "same" and v or nil, "second") end)
+	local row = Row(page, y, "New profile")
+	local well
+	local create = ns.RedButton(row, "Create", 80, 22)
+	create:SetPoint("RIGHT", -8, 0)
+	local function make()
+		local ok, why = ns.CreateProfile(well.box:GetText())
+		if ok then
+			well.box:SetText("")
+			well.box:ClearFocus()
+			Changed()
+		else
+			ns.Print(why)
+		end
+	end
+	well = NameBox(row, CONTROL_W - 86, "name", make)
+	well:SetPoint("RIGHT", create, "LEFT", -6, 0)
+	create:SetScript("OnClick", make)
+	y = y - ROW_H
 
 	y = Section(page, y, "Edit the profile in use")
-	y = Choice(page, y, "Copy settings from", copyFrom,
+	y = Choice(page, y, "Copy from",
+		function()
+			local list = { { "none", "Choose" } }
+			for _, preset in ipairs(ns.PRESETS) do list[#list + 1] = { "preset:" .. preset, preset .. " preset" } end
+			for _, name in ipairs(ns.ProfileNames()) do
+				if name ~= ns.ActiveProfile() then list[#list + 1] = { name, name } end
+			end
+			return list
+		end,
 		function() return "none" end,
 		function(v)
 			if v == "none" then return end
 			local name = ns.ActiveProfile()
-			if v == name then
-				ns.CopyProfile(v)  -- says it is already the one in use
-				return
-			end
-			Confirm("Copy " .. v .. "'s settings into " .. name .. "?\nEverything in " .. name .. " is replaced.",
+			local from = v:match("^preset:(.+)") and v:match("^preset:(.+)") .. " preset" or v
+			Confirm("Copy " .. from .. " into " .. name .. "?\nEverything in " .. name .. " is replaced.",
 				"Copy", function() ns.CopyProfile(v) end)
 		end)
-	y = Action(page, y, "Reset to defaults", function()
-		local name = ns.ActiveProfile()
-		Confirm("Reset " .. name .. " to the default settings?", "Reset", ns.ResetProfile)
-	end, function() return "Reset" end)
-	y = Action(page, y, "Send it to a friend", function() ns.OpenShare("export") end,
-		function() return "Export" end)
-	y = Action(page, y, "Load a friend's profile into it", function() ns.OpenShare("import") end,
-		function() return "Import" end)
+	y = Choice(page, y, "Delete a profile",
+		function()
+			local list = { { "none", "Choose" } }
+			for _, name in ipairs(ns.ProfileNames()) do
+				if name ~= "Default" and name ~= ns.ActiveProfile() then list[#list + 1] = { name, name } end
+			end
+			return list
+		end,
+		function() return "none" end,
+		function(v)
+			if v == "none" then return end
+			Confirm("Delete " .. v .. "?\nCharacters using it go back to Default.", "Delete",
+				function() ns.DeleteProfile(v) end)
+		end)
+	row = Row(page, y, "Reset, send or load")
+	local last
+	for _, def in ipairs({
+		{ "Import", function() ns.OpenShare("import") end },
+		{ "Export", function() ns.OpenShare("export") end },
+		{ "Reset", function()
+			local name = ns.ActiveProfile()
+			Confirm("Reset " .. name .. " to the default settings?", "Reset", ns.ResetProfile)
+		end },
+	}) do
+		local b = ns.RedButton(row, def[1], 80, 22)
+		if last then b:SetPoint("RIGHT", last, "LEFT", -6, 0) else b:SetPoint("RIGHT", -8, 0) end
+		b:SetScript("OnClick", def[2])
+		last = b
+	end
+	return y - ROW_H
+end
+
+local function AppPage(page)
+	local y = Section(page, TOP, "App", true, "The same for every profile.")
+	y = Check(page, y, "RatBites on", app("enabled"))
+	y = Check(page, y, "Hide the game's own numbers", app("hideBlizzard"))
+	y = Check(page, y, "Minimap button", app("minimapButton"))
+	y = Check(page, y, "Background art", app("bgOn"))
 	return y
 end
 
-local PAGES = {
-	{ "general", "General", GeneralPage },
-	{ "where", "Where", WherePage },
-	{ "what", "What", WhatPage },
-	{ "look", "Look", LookPage },
-	{ "motion", "Motion", MotionPage },
-	{ "boxes", "Boxes", BoxesPage },
-	{ "profiles", "Profiles", ProfilesPage },
+-- the side menu: groups of pages, each with its icon
+local MENU = {
+	{ "Numbers", {
+		{ "show", "Show", [[Interface\Icons\Ability_Hunter_SniperShot]], ShowPage },
+		{ "spells", "Spells", [[Interface\Icons\Spell_Fire_Fireball02]], SpellsPage },
+		{ "look", "Look", [[Interface\Icons\INV_Misc_Spyglass_03]], LookPage },
+		{ "boxes", "Boxes", [[Interface\Icons\INV_Scroll_03]], BoxesPage },
+	} },
+	{ "Setup", {
+		{ "profiles", "Profiles", [[Interface\Icons\Achievement_Character_Orc_Male]], ProfilesPage },
+		{ "app", "App", [[Interface\Icons\INV_Misc_Wrench_01]], AppPage },
+	} },
 }
 
 -- every row shows the active profile's value again (after a profile switch)
@@ -436,23 +739,7 @@ function ns.RefreshOptions()
 	for _, fn in ipairs(refreshers) do fn() end
 end
 
---------------------------------------------------------------------------------
--- tabs: small cut-corner plates standing on the hairline under them; the open one takes the window's
--- fill, a gold edge and gold text
---------------------------------------------------------------------------------
-
-local TAB_H, TAB_PAD, TAB_GAP = 28, 13, 3
-local TAB_X, TAB_Y = 90, -42   -- clear of the medallion over the top-left corner
-
-local function PaintTab(tab, on)
-	if on then
-		ns.TintChamfer(tab.chamfer, ns.WIN_FILL, C.accent)
-		tab.text:SetTextColor(rgb(C.accentText))
-	else
-		ns.TintChamfer(tab.chamfer, C.panelD, ns.WIN_EDGE)
-		tab.text:SetTextColor(rgb(C.textDim))
-	end
-end
+local MENU_TOP, MENU_ROW = -54, 34   -- the menu starts clear of the medallion
 
 function ns.CreateOptions()
 	C, rgb = ns.C, ns.rgb
@@ -485,45 +772,95 @@ function ns.CreateOptions()
 	local body = CreateFrame("Frame", nil, panel)
 	body:SetAllPoints(panel)
 
+	-- the side menu's edge: a hairline from under the title bar to the bottom
+	local edge = body:CreateTexture(nil, "ARTWORK")
+	edge:SetTexture(ns.FLAT)
+	edge:SetVertexColor(rgb(ns.WIN_EDGE))
+	edge:SetWidth(1)
+	edge:SetPoint("TOPLEFT", SIDE_W, -30)
+	edge:SetPoint("BOTTOMLEFT", SIDE_W, ns.INSET)
 
-	-- the tabs and the gold hairline they stand on
-	local line = body:CreateTexture(nil, "ARTWORK")
-	line:SetTexture(ns.FLAT)
-	line:SetVertexColor(rgb(C.accent))
-	line:SetHeight(1)
-	line:SetPoint("TOPLEFT", ns.INSET, TAB_Y - TAB_H)
-	line:SetPoint("TOPRIGHT", -ns.INSET, TAB_Y - TAB_H)
-	local tabs, pages, lowest = {}, {}, 0
+	local items, pages, lowest = {}, {}, 0
 	local function Open(key)
 		ns.char.tab = key
 		ns.CloseDropdowns()
 		for k, page in pairs(pages) do
 			if k == key then page:Show() else page:Hide() end
-			PaintTab(tabs[k], k == key)
+			local item = items[k]
+			if k == key then
+				item.text:SetTextColor(rgb(C.accentText))
+				item.band:Show()
+			else
+				item.text:SetTextColor(rgb(C.text))
+				item.band:Hide()
+			end
 		end
 	end
-	local x = TAB_X
-	for _, def in ipairs(PAGES) do
-		local key = def[1]
-		local tab = CreateFrame("Button", nil, body)
-		tab.chamfer = ns.SmallChamfer(tab, true)
-		tab.text = Text(tab, 13)
-		tab.text:SetPoint("CENTER", 0, 0)
-		tab.text:SetText(def[2])
-		tab:SetWidth(tab.text:GetStringWidth() + TAB_PAD * 2)
-		tab:SetHeight(TAB_H)
-		-- the open tab covers the hairline under it, so it joins the page
-		tab:SetPoint("TOPLEFT", body, "TOPLEFT", x, TAB_Y)
-		tab:SetFrameLevel(body:GetFrameLevel() + 3)
-		tab:SetScript("OnClick", function() PlaySound("igMainMenuOptionCheckBoxOn"); Open(key) end)
-		x = x + tab:GetWidth() + TAB_GAP
-		tabs[key] = tab
+	local y = MENU_TOP
+	for g, group in ipairs(MENU) do
+		if g > 1 then y = y - 12 end
+		local heading = Text(body, 11, C.textDim)
+		heading:SetPoint("TOPLEFT", 22, y)
+		heading:SetText(group[1]:upper())
+		local rule = ns.Rule(body)
+		rule:SetPoint("TOPLEFT", 22, y - 16)
+		rule:SetWidth(SIDE_W - 40)
+		y = y - 24
+		for _, def in ipairs(group[2]) do
+			local key = def[1]
+			local item = CreateFrame("Button", nil, body)
+			item:SetPoint("TOPLEFT", 14, y)
+			item:SetWidth(SIDE_W - 28); item:SetHeight(MENU_ROW - 2)
+			item.band = item:CreateTexture(nil, "BACKGROUND")
+			item.band:SetTexture(ns.FLAT)
+			item.band:SetVertexColor(1, 0.82, 0, 0.06)
+			item.band:SetAllPoints(item)
+			local hover = item:CreateTexture(nil, "HIGHLIGHT")
+			hover:SetTexture(ns.FLAT)
+			hover:SetVertexColor(1, 1, 1, 0.05)
+			hover:SetAllPoints(item)
+			local icon = item:CreateTexture(nil, "ARTWORK")
+			icon:SetTexture(def[3])
+			icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+			icon:SetWidth(24); icon:SetHeight(24)
+			icon:SetPoint("LEFT", 8, 0)
+			item.text = Text(item, 15)
+			item.text:SetPoint("LEFT", icon, "RIGHT", 10, 0)
+			item.text:SetText(def[2])
+			item:SetScript("OnClick", function() PlaySound("igMainMenuOptionCheckBoxOn"); Open(key) end)
+			items[key] = item
+			y = y - MENU_ROW
 
-		local page = CreateFrame("Frame", nil, body)
-		page:SetAllPoints(body)
-		page:Hide()
-		pages[key] = page
-		lowest = math.min(lowest, def[3](page))
+			local page = CreateFrame("Frame", nil, body)
+			page:SetPoint("TOPLEFT", SIDE_W, 0)
+			page:SetPoint("BOTTOMRIGHT", 0, 0)
+			page:Hide()
+			pages[key] = page
+			lowest = math.min(lowest, def[4](page))
+		end
+	end
+	lowest = math.min(lowest, y)
+
+	-- the bar along the bottom, under the pages: the profile in use, Test and Move boxes
+	local foot = CreateFrame("Frame", nil, body)
+	foot:SetPoint("BOTTOMLEFT", SIDE_W + 1, ns.INSET)
+	foot:SetPoint("BOTTOMRIGHT", -ns.INSET, ns.INSET)
+	foot:SetHeight(FOOT_H)
+	local footRule = ns.Rule(foot)
+	footRule:SetPoint("TOPLEFT", 0, 0)
+	footRule:SetPoint("TOPRIGHT", 0, 0)
+	local who = Text(foot, 12, C.textDim)
+	who:SetPoint("LEFT", MARGIN - 4, 0)
+	local move = ns.RedButton(foot, "", 120, 22)
+	move:SetPoint("RIGHT", -MARGIN + 6, 0)
+	move:SetScript("OnClick", function() ns.SetBoxesUnlocked(not ns.BoxesUnlocked()); Changed() end)
+	local test = ns.RedButton(foot, "", 120, 22)
+	test:SetPoint("RIGHT", move, "LEFT", -6, 0)
+	test:SetScript("OnClick", function() ns.SetTestLoop(not ns.TestLooping()); Changed() end)
+	refreshers[#refreshers + 1] = function()
+		who:SetText("Profile: |cffffd100" .. ns.ActiveProfile() .. "|r")
+		test:SetText(ns.TestLooping() and "Stop test" or "Test")
+		move:SetText(ns.BoxesUnlocked() and "Lock boxes" or "Move boxes")
 	end
 
 	-- Minimized, the window folds into its medallion, floating where the medallion was: drag it away,
@@ -578,9 +915,10 @@ function ns.CreateOptions()
 	mini:SetPoint("RIGHT", head.close, "LEFT", -4, 0)
 	mini:SetScript("OnClick", Minimize)
 
-	panel:SetHeight(-lowest + 24)
+
+	panel:SetHeight(-lowest + FOOT_H + 20)
 	refreshers[#refreshers + 1] = function() PaintArt(art, wash, panel:GetWidth(), panel:GetHeight()) end
-	Open(pages[ns.char.tab] and ns.char.tab or "general")
+	Open(pages[ns.char.tab] and ns.char.tab or "show")
 	panel:SetScript("OnShow", function() for _, fn in ipairs(refreshers) do fn() end end)
 	panel:SetScript("OnHide", function()
 		ns.CloseDropdowns()
@@ -591,7 +929,9 @@ function ns.CreateOptions()
 	end)
 end
 
+-- the window is made the first time it opens, so a session that never opens it doesn't carry it
 function ns.OpenOptions()
+	if not panel then ns.CreateOptions() end
 	if ns.RestoreOptions() then return end
 	if panel:IsShown() then panel:Hide() else panel:Show() end
 end

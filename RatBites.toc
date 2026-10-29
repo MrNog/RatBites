@@ -8,6 +8,7 @@
 Core.lua
 Style.lua
 Plates.lua
+CritGlyphs.lua
 Bites.lua
 Boxes.lua
 Options.lua

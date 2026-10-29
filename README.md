@@ -19,10 +19,10 @@
 ## What you see
 
 - **Output, what you do:** every hit and heal rises over its target's nameplate with the spell's icon,
-  or goes into **My box**. Heals land on the friend you healed however you cast them (raid frames,
+  or goes into the **Output box**. Heals land on the friend you healed however you cast them (raid frames,
   mouseover); friendly nameplates must be on, but you can hide their look in your nameplate addon.
 - **Receiving, what lands on you:** heals, shields and hits on you (your self-heals too) go to the
-  **Received box**, and can also float over your character.
+  **Input box**, and can also float over your character.
 - **Colours that tell you what happened:** grey hits, gold big hits, orange crits, green heals, mint
   heal crits, dim overheal, blue shields, red damage taken. Crits get a thick outline and bigger text.
 
@@ -31,7 +31,7 @@
 | | |
 |---|---|
 | **Nameplates** | Numbers ride the enemy's or friend's plate, with ElvUI plates too. Hits landing together stack a line apart. |
-| **Boxes** | My box and Received box, xCT style. Move and resize them; each has its own scroll direction, alignment, merge and line time. |
+| **Boxes** | Output box (what you do) and Input box (what lands on you), xCT style. Move and resize them; each has its own scroll direction, alignment, merge and line time. |
 | **Merging** | In a box, the same spell again within a few seconds joins one line as a total with `x5`, like an AoE on five mobs. |
 | **Shields** | Val'anyr (with its mace icon), Divine Aegis and Sacred Shield show their size; Power Word: Shield shows as *Shield*. |
 | **Weapon icon** | Your auto-attacks show the weapon you have equipped. |
@@ -61,6 +61,6 @@
 
 3.3.5a nameplates don't carry a unit id, so numbers are matched to plates by name. When several mobs
 with the same name are on screen, your target always gets its numbers; the others keep the plate they
-were last seen on. A heal on someone without a plate on screen goes to My box (or a column right of the screen's centre, or nowhere: your choice).
+were last seen on. A heal on someone without a plate on screen goes to the Output box (or a column right of the screen's centre, or nowhere: your choice).
 
 See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

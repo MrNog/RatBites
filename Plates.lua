@@ -107,6 +107,8 @@ learn:SetScript("OnUpdate", function(self)
 end)
 ns.On("UPDATE_MOUSEOVER_UNIT", function() pending.mouseover = true; learn:Show() end)
 ns.On("PLAYER_TARGET_CHANGED", function() pending.target = true; learn:Show() end)
+-- every mob you hit is remembered for its fight only: a raid night's trash would otherwise pile up
+ns.On("PLAYER_REGEN_ENABLED", function() wipe(lastPlate) end)
 
 -- true while the plate still shows the unit it was matched to
 function ns.PlateShows(plate, name)

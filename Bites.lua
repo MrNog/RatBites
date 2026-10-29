@@ -5,9 +5,9 @@ local ADDON, ns = ...
 -- of the boxes (Boxes.lua) as a line.
 
 local FADE_AT = 0.65      -- share of a number's time before its fade starts
-local POP_TIME = 0.15     -- a popping crit shrinks to its size over this long
 local SIZE = 20           -- a normal hit's font size at scale 1, and every icon's size
 ns.SIZE = SIZE
+local RISE = 60          -- how far a floating number travels
 local MAX_TEXTS = 40
 local ATTACK_ICON = [[Interface\Icons\INV_Sword_04]]
 
@@ -22,7 +22,6 @@ ns.FONTS = {
 -- from the softer normal numbers at a glance.
 local COLOR = {
 	normal = { 0.72, 0.72, 0.72 },
-	big = { 1, 0.82, 0 },
 	crit = { 1, 0.4, 0, thick = true },
 	miss = { 0.9, 0.9, 0.9 },
 	heal = { 0.4, 0.88, 0.45 },
@@ -32,24 +31,29 @@ local COLOR = {
 	buff = { 1, 0.9, 0.55 },
 	taken = { 0.88, 0.32, 0.27 },
 	takenCrit = { 1, 0.22, 0.45, thick = true },
+	-- mana, rage, energy and runic power you gain, by the game's power type number
+	power = {
+		[0] = { 0.4, 0.62, 1 },
+		[1] = { 1, 0.35, 0.3 },
+		[3] = { 1, 0.9, 0.35 },
+		[6] = { 0.35, 0.85, 1 },
+	},
 }
 ns.COLOR = COLOR
 
--- The game's four fonts, then every font other addons registered with LibSharedMedia (ElvUI's,
--- SharedMedia packs), keyed "lsm:<name>". Read when the settings window is built, after they loaded.
+-- The fonts big crits have images for (CritGlyphs.lua), so every number in a font matches its
+-- crits, keyed "lsm:<name>": the ones SharedMedia has loaded. Without SharedMedia, the game's four
+-- (crits then drawn in Blender Pro). Read when the settings window is built, after they loaded.
 function ns.FontList()
 	local list = {}
-	for _, f in ipairs(ns.FONTS) do list[#list + 1] = { f[1], f[2] } end
 	local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 	if LSM then
 		for _, name in ipairs(LSM:List("font")) do
-			local path = LSM:Fetch("font", name)
-			local builtIn = false
-			for _, f in ipairs(ns.FONTS) do
-				if f[3]:lower() == (path or ""):lower() then builtIn = true end
-			end
-			if not builtIn then list[#list + 1] = { "lsm:" .. name, name } end
+			if ns.CRIT_GLYPHS[name] then list[#list + 1] = { "lsm:" .. name, name } end
 		end
+	end
+	if #list == 0 then
+		for _, f in ipairs(ns.FONTS) do list[#list + 1] = { f[1], f[2] } end
 	end
 	return list
 end
@@ -105,22 +109,6 @@ local function Abbrev(v)
 end
 ns.Abbrev = Abbrev
 
--- A hit well above your recent ones is a big hit: compared with the last 8 normal hits of the last
--- 30 sec, once there are at least 3.
-local samples = {}
-local function IsBig(amount)
-	local now = GetTime()
-	for i = #samples, 1, -1 do
-		if now - samples[i].t > 30 then table.remove(samples, i) end
-	end
-	local sum = 0
-	for _, s in ipairs(samples) do sum = sum + s.v end
-	local big = #samples >= 3 and amount >= sum / #samples * 1.2
-	table.insert(samples, { t = now, v = amount })
-	if #samples > 8 then table.remove(samples, 1) end
-	return big
-end
-
 --------------------------------------------------------------------------------
 -- the floating texts
 --------------------------------------------------------------------------------
@@ -133,7 +121,7 @@ local pool, active, queued = {}, {}, {}
 local arc = 1
 
 -- how far a number drifts sideways while it rises: at least [1], plus up to [2] more at random
-local SPREAD = { none = { 0, 0 }, tight = { 8, 8 }, normal = { 15, 15 }, wide = { 35, 30 } }
+local DRIFT, DRIFT_MORE = 15, 15  -- an arc's sideways drift: at least DRIFT, up to DRIFT_MORE further
 
 -- Numbers that land on the same spot together (a heal and its proc, a multi-hit) would start on top
 -- of each other, so each one within STACK_TIME of the last starts a line higher, up to STACK_MAX.
@@ -145,12 +133,79 @@ local function StackLine(key, size)
 	local s = stacks[key]
 	if s and now - s.at < STACK_TIME then
 		s.n = (s.n + 1) % STACK_MAX
+	elseif s then
+		s.n = 0
 	else
 		s = { n = 0 }
 		stacks[key] = s
 	end
 	s.at = now
 	return s.n * (size + 4)
+end
+
+-- Each number moves by WoW's own animation system, so the engine moves it smoothly between frames:
+-- its spot is set once, then animations slide it. Sideways moves at a steady pace while the rise
+-- eases out, which together make the arc; the fade is an animation too.
+-- The client turns down a font size that is too big (the text then keeps its old, small font) and
+-- won't draw text bigger by scaling its frame either, so a number bigger than the biggest size it
+-- takes (a big crit) gets that size and is stretched the rest with SetTextHeight, as Blizzard's own
+-- combat text grows its crits. That biggest size depends on the font and the client, so it is
+-- tried out once per font: the bigger it is, the less a crit is stretched and the sharper it stays.
+-- A popping crit lands like a bomb: it appears BOMB times bigger and shrinks smoothly back over
+-- BOMB_TIME, sized by hand for that moment, and only then does its path start.
+local START_GAP = 12  -- how far above the plate a number starts
+local FONT_MAX = 32   -- a size every client takes
+local FONT_TRY = 200  -- the biggest size tried
+
+local fontMax = {}  -- font path -> the biggest size the client takes for it
+local function FontMax(path)
+	if fontMax[path] then return fontMax[path] end
+	local probe = root.probe
+	if not probe then
+		probe = root:CreateFontString(nil, "OVERLAY")
+		probe:Hide()
+		root.probe = probe
+	end
+	-- a size the client turns down leaves the font string on its old size
+	local function Takes(size)
+		probe:SetFont(path, FONT_MAX, "OUTLINE")
+		probe:SetFont(path, size, "OUTLINE")
+		local _, got = probe:GetFont()
+		return got and math.abs(got - size) < 1
+	end
+	local low, high = FONT_MAX, FONT_TRY
+	if Takes(high) then
+		low = high
+	else
+		while high - low > 1 do
+			local mid = math.floor((low + high) / 2)
+			if Takes(mid) then low = mid else high = mid end
+		end
+	end
+	fontMax[path] = low
+	return low
+end
+
+-- /bites font: the biggest size the client takes for the font in use, and a crit's size now
+function ns.ReportFont()
+	local db = ns.db
+	local crit = SIZE * db.critSize * db.scale
+	print(format("|cffffd200RatBites|r font takes up to %d, a crit wants %d (stretched %.1fx)",
+		FontMax(ns.FontPath()), crit, math.max(1, crit / FontMax(ns.FontPath()))))
+end
+local BOMB, BOMB_TIME = 2.5, 0.25
+
+local function Finished(group)
+	local t = group.owner
+	for i = #active, 1, -1 do
+		if active[i] == t then
+			table.remove(active, i)
+			break
+		end
+	end
+	t:Hide()
+	t.plate = nil
+	table.insert(pool, t)
 end
 
 local function Acquire()
@@ -167,136 +222,284 @@ local function Acquire()
 	t.edge:SetVertexColor(0, 0, 0)
 	t.icon = t:CreateTexture(nil, "OVERLAY")
 	t.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-	t.icon:SetPoint("RIGHT", t.text, "LEFT", -4, 0)
+	t.glyphs = {}
 	t.edge:SetPoint("TOPLEFT", t.icon, "TOPLEFT", -1, 1)
 	t.edge:SetPoint("BOTTOMRIGHT", t.icon, "BOTTOMRIGHT", 1, -1)
+	-- order 1 is the whole path for most animations; Fountain goes up in order 1, down in order 2
+	local g = t:CreateAnimationGroup()
+	g.owner = t
+	g:SetScript("OnFinished", Finished)
+	t.group = g
+	t.x1 = g:CreateAnimation("Translation"); t.x1:SetOrder(1)
+	t.y1 = g:CreateAnimation("Translation"); t.y1:SetOrder(1)
+	t.x2 = g:CreateAnimation("Translation"); t.x2:SetOrder(2)
+	t.y2 = g:CreateAnimation("Translation"); t.y2:SetOrder(2)
+	t.fade = g:CreateAnimation("Alpha")
+	t.fade:SetChange(-1)
+	t.fade:SetOrder(1)
 	return t
 end
 
-local function Release(i)
-	local t = table.remove(active, i)
-	t:Hide()
-	t.plate = nil
-	table.insert(pool, t)
+local function Leg(a, x, y, duration, smoothing, delay)
+	a:SetOffset(x, y)
+	a:SetDuration(math.max(0.01, duration))
+	a:SetSmoothing(smoothing)
+	a:SetStartDelay(delay or 0)
 end
 
--- Each animation's offset from the start at p (0 to 1 of the number's time). h is the Height setting.
---   arc: rises while it drifts sideways   rise: straight up   stay: holds still, only fades
---   fountain: pops up and falls back past its start   fall: starts h above and drifts down to it
-local function Path(t, p)
-	local h = t.rise
-	if t.anim == "rise" then return 0, h * p end
-	if t.anim == "stay" then return 0, 0 end
-	if t.anim == "fountain" then return t.dx * p, h * (4 * p - 4.6 * p * p) end
-	if t.anim == "fall" then return 0, h * (1 - p) end
-	return t.dx * p, h * p - 20 * p * p
+-- The number's font at its size: drawn at that size when the client takes it (sharp), stretched
+-- past the biggest size it takes. The thick outline is for normal-sized crits only: on a big number
+-- it is a heavy black edge, so a crit past THICK_MAX takes the thin one.
+local THICK_MAX = 32
+local SHARP_MAX = 32  -- the biggest text the client draws sharp; past it, text is enlarged
+local function SetSize(t)
+	t.text:SetFont(ns.FontPath(), t.fontPx, t.thick and t.want <= THICK_MAX and "THICKOUTLINE" or "OUTLINE")
+	if t.want > t.fontPx then t.text:SetTextHeight(t.want) end
 end
 
--- The path, the start gap and the stack line are screen distances (UIParent units): the text's
--- own offsets are scaled with it, so each is divided by the text's scale, and a bigger text size
--- doesn't send numbers further. The stack line grows with the text, as the lines it keeps apart do.
--- On a plate the spot is kept up to date while the plate still shows the same name, so a plate that
--- goes away mid-flight leaves the text where it was.
-local START_GAP = 12  -- how far above the plate a number starts
-local DOT_LINGER = 4  -- sec a DoT's number stays on its plate after a tick
-
--- What a number starts above: the plate, or with ElvUI's plates the row of your debuffs on it, so
--- the number doesn't sit on top of the icons.
-local function PlateTop(plate)
-	local debuffs = plate.UnitFrame and plate.UnitFrame.Debuffs
-	if debuffs and debuffs:IsShown() and debuffs[1] and debuffs[1]:IsShown() then return debuffs end
-	return plate
+-- Big crits are drawn as images: each character is a piece of
+-- Media\Crit\<font>.blp, drawn large with its black outline, white tinted to the crit's colour, so
+-- it is sharp at any size. Made for every font in the Font list; a font without them uses Blender Pro's.
+local CRIT_TRACK = 4  -- extra room between characters, in pixels of the drawn cell
+local function CritImages()
+	local name = ns.db.font:match("^lsm:(.+)")
+	return name and ns.CRIT_GLYPHS[name] and name or "Blender Pro"
 end
--- A number travels its path over its move time and fades over the end of it; a DoT's number then
--- holds at the path's end until its longer time runs out (or the next tick starts it over).
-local function Move(t, elapsed)
-	local p = math.min(1, elapsed / t.moveTime)
-	local fadeLen = t.moveTime * (1 - FADE_AT)
-	local left = t.duration - elapsed
-	local textScale = ns.db.scale
-	local scale = textScale
-	if t.pop and elapsed < POP_TIME then scale = scale * (1 + 0.5 * (1 - elapsed / POP_TIME)) end
-	t:SetScale(scale)
-	local dx, dy = Path(t, p)
-	dy = dy + (t.straight and 0 or START_GAP) + t.line * textScale
-	dx, dy = dx / scale, dy / scale
-	t:ClearAllPoints()
-	if t.plate and ns.PlateShows(t.plate, t.name) then
-		local base = PlateTop(t.plate)
-		t:SetPoint("CENTER", base, "TOP", dx, dy)
-		local x, top = t.plate:GetCenter(), base:GetTop()
-		if x and top then
-			local s = t.plate:GetEffectiveScale() / UIParent:GetEffectiveScale()
-			t.x, t.y = x * s, top * s
-		end
+
+-- A font's images, unpacked from its string the first time a crit needs them: file, size and a
+-- table per character. Only the font in use is kept unpacked.
+local unpacked, unpackedName
+local function CritSet(name)
+	if unpackedName == name then return unpacked end
+	local packed = ns.CRIT_GLYPHS[name]
+	if not packed then return nil end
+	local file, size, chars = packed:match("^([^|]+)|(%d+)|(.*)$")
+	local set = { file = file, size = tonumber(size) }
+	for entry in chars:gmatch("[^;]+") do
+		local g = {}
+		for v in entry:sub(3):gmatch("%S+") do g[#g + 1] = tonumber(v) end
+		set[entry:sub(1, 1)] = g
+	end
+	unpacked, unpackedName = set, name
+	return set
+end
+
+-- The characters are textures of the number's own frame, like its icon: an animation moves and
+-- fades a frame's own textures, not frames inside it.
+
+-- the characters laid out at size want (the pop redraws them as it shrinks): the icon and number
+-- centred together on the frame, or by the Align setting starting just after the icon's column
+-- (left) or ending at the same spot (right)
+local function PlaceDigits(t, want)
+	local set, k = t.glyphSet, want / t.glyphSet.size
+	local cell, pen = ns.CRIT_CELL * k, 0
+	-- the whole number's width first, so it can be centred
+	local n = #t.glyphLabel
+	for i = 1, n - 1 do pen = pen + set[t.glyphLabel:sub(i, i)][7] + CRIT_TRACK end
+	local last = set[t.glyphLabel:sub(n, n)]
+	local first = set[t.glyphLabel:sub(1, 1)]
+	local left = first[6] * k
+	local width = (pen + last[6] + last[5]) * k - left
+	local x0
+	if t.align == "left" then
+		x0 = -t.alignAt + (t.icon:IsShown() and t.icon:GetWidth() + 4 or 0)
+	elseif t.align == "right" then
+		x0 = t.alignAt - width
 	else
-		t.plate = nil
-		t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.x / scale + dx, t.y / scale + dy)
+		x0 = -width / 2 + (t.icon:IsShown() and (t.icon:GetWidth() + 4) / 2 or 0)
 	end
-	t:SetAlpha(left < fadeLen and left / fadeLen or 1)
+	pen = 0
+	for i = 1, n do
+		local g = set[t.glyphLabel:sub(i, i)]
+		local tex = t.glyphs[i]
+		tex:SetWidth(g[5] * k); tex:SetHeight(cell)
+		tex:ClearAllPoints()
+		tex:SetPoint("LEFT", t, "CENTER", (pen + g[6]) * k - left + x0, 0)
+		pen = pen + g[7] + CRIT_TRACK
+	end
 end
 
--- plate: the nameplate to ride (nil: the spot x, y in UIParent units); column: a fixed spot's
--- straight column, which always rises; tick: a DoT tick's amount, so the next tick of the same DoT
--- on the same plate joins this number ("1864 x2") and pops it again instead of making another
-local function Show(plate, name, x, y, label, color, size, icon, pop, column, tick)
-	if tick and plate then
-		for _, t in ipairs(active) do
-			if t.tick and t.plate == plate and t.iconPath == icon and t.color == color then
-				t.count, t.tick = t.count + 1, t.tick + tick
-				t.label = Abbrev(t.tick) .. " x" .. t.count
-				t.text:SetText(t.label)
-				t.start, t.pop = GetTime(), true
-				ns.lastShown = t
-				return
-			end
-		end
+-- the label as images at size want; false when it has a character there is no image of
+local function DrawDigits(t, label, want, color)
+	local set = CritSet(CritImages())
+	if not set then return false end
+	label = label:lower()
+	for i = 1, #label do
+		if not set[label:sub(i, i)] then return false end
 	end
-	if #active >= MAX_TEXTS then Release(1) end
+	t.glyphSet, t.glyphLabel = set, label
+	for i = 1, #label do
+		local g = set[label:sub(i, i)]
+		local tex = t.glyphs[i]
+		if not tex then
+			tex = t:CreateTexture(nil, "OVERLAY")
+			t.glyphs[i] = tex
+		end
+		tex:SetTexture([[Interface\AddOns\RatBites\Media\Crit\]] .. set.file)
+		tex:SetTexCoord(g[1], g[2], g[3], g[4])
+		tex:SetVertexColor(color[1], color[2], color[3])
+		tex:Show()
+	end
+	for i = #label + 1, #t.glyphs do t.glyphs[i]:Hide() end
+	PlaceDigits(t, want)
+	return true
+end
+
+local function HideDigits(t)
+	for i = 1, #t.glyphs do t.glyphs[i]:Hide() end
+end
+
+local function Bombing(group, elapsed)
+	local t = group.owner
+	t.bombed = t.bombed + elapsed
+	local f = 1 - t.bombed / BOMB_TIME
+	if f <= 0 then
+		-- landed: drawn again at its own size, so it is sharp rather than resampled
+		if t.useDigits then PlaceDigits(t, t.want) else SetSize(t) end
+		group:SetScript("OnUpdate", nil)
+		return
+	end
+	local grow = 1 + (BOMB - 1) * f * f
+	if t.useDigits then PlaceDigits(t, t.want * grow) else t.text:SetTextHeight(t.want * grow) end
+end
+
+-- Sets the number's path (h is the Height setting, dx its sideways drift), after a popping crit's
+-- bomb:
+--   arc: drifts sideways while the rise eases out   rise: straight up   stay: holds, only fades
+local function Plan(t, pop)
+	local d, h, dx = t.duration, t.rise, t.dx
+	local wait = pop and BOMB_TIME or 0
+	local fadeAt, fadeLen = d * FADE_AT, d * (1 - FADE_AT)
+	local x, y = dx, h
+	if t.anim == "rise" then x = 0 end
+	if t.anim == "stay" then x, y = 0, 0 end
+	Leg(t.x1, x, 0, d, "NONE", wait)
+	Leg(t.y1, 0, y, d, "OUT", wait)
+	Leg(t.x2, 0, 0, 0.01, "NONE")
+	Leg(t.y2, 0, 0, 0.01, "NONE")
+	t.fade:SetStartDelay(wait + fadeAt)
+	t.fade:SetDuration(fadeLen)
+end
+
+-- plate: the nameplate the number starts over (nil: the spot x, y in UIParent units); column: a
+-- fixed spot's straight column (no sideways drift); anim: how it moves, the Motion setting for heals
+-- or for damage
+local function Show(plate, name, x, y, label, color, size, icon, pop, column, anim)
+	if #active >= MAX_TEXTS then
+		local oldest = active[1]
+		oldest.group:Stop()
+		Finished(oldest.group)
+	end
 	local t = Acquire()
-	t.tick, t.count, t.iconPath, t.color = tick, 1, icon, color
 	local db = ns.db
-	t.text:SetFont(ns.FontPath(), size, color.thick and "THICKOUTLINE" or "OUTLINE")
+	t.group:Stop()
+	t:SetAlpha(1)
+	-- a crit draws above every other number, so it shows through a pile of heals
+	t:SetFrameLevel(root:GetFrameLevel() + (color.thick and 20 or 1))
+	-- the size it should show at (Text size included): its font as big as the client takes it,
+	-- stretched the rest
+	-- a crit bigger than the client draws text sharp is drawn from character images instead, sharp
+	-- at any size; text only when it has a character there is no image of
+	local want = size * db.scale
+	local fontPx = math.min(FontMax(ns.FontPath()), math.floor(want + 0.5))
+	t.want, t.fontPx, t.thick = want, fontPx, color.thick
+	-- a new font string takes no text before it has a font
+	SetSize(t)
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
+	t.useDigits = color.thick and want > SHARP_MAX and DrawDigits(t, label, want, color)
+	-- Align: centre puts the number on the spot; left starts every icon at the same spot left of it,
+	-- so the icons of a stack stand in one column and the numbers start after them; right ends every
+	-- number at the same spot right of it. (A joined shield may have moved the text beside a crit's
+	-- images: it is placed again here.)
+	local iconOn = icon and db.icons
+	local at = SIZE * db.scale
+	t.align, t.alignAt = db.align, at
+	t.text:ClearAllPoints()
+	t.icon:ClearAllPoints()
+	if t.useDigits then
+		t.text:Hide()
+		t.text:SetPoint("CENTER")
+		if t.align == "left" then
+			t.icon:SetPoint("LEFT", t, "CENTER", -at, 0)
+		else
+			t.icon:SetPoint("RIGHT", t.glyphs[1], "LEFT", -4, 0)
+		end
+	else
+		HideDigits(t)
+		t.text:Show()
+		if t.align == "left" then
+			if iconOn then
+				t.icon:SetPoint("LEFT", t, "CENTER", -at, 0)
+				t.text:SetPoint("LEFT", t.icon, "RIGHT", 4, 0)
+			else
+				t.text:SetPoint("LEFT", t, "CENTER", -at, 0)
+			end
+		else
+			if t.align == "right" then
+				t.text:SetPoint("RIGHT", t, "CENTER", at, 0)
+			else
+				t.text:SetPoint("CENTER")
+			end
+			t.icon:SetPoint("RIGHT", t.text, "LEFT", -4, 0)
+		end
+	end
+	-- an icon has a normal hit's size; a crit's grows with its number, to half its height
+	local iconSize = SIZE * db.scale
+	if color.thick then iconSize = math.max(iconSize, want * 0.5) end
+	t.icon:SetWidth(iconSize); t.icon:SetHeight(iconSize)
 	if icon and db.icons then
 		t.icon:SetTexture(icon)
-		-- every icon has one size (a normal hit's), so crits grow only their text
-		t.icon:SetWidth(SIZE * db.iconScale); t.icon:SetHeight(SIZE * db.iconScale)
 		t.icon:Show(); t.edge:Show()
 	else
 		t.icon:Hide(); t.edge:Hide()
 	end
+	if t.useDigits then PlaceDigits(t, want) end
 	t.plate, t.name, t.x, t.y = plate, name, x, y
+	-- A number on a plate starts over the plate's top, read once here: from then on the animation
+	-- moves it, since a plate shifts a pixel or two every frame as you or the camera move.
+	if plate then
+		local cx, top = plate:GetCenter(), plate:GetTop()
+		if cx and top then
+			local s = plate:GetEffectiveScale() / UIParent:GetEffectiveScale()
+			t.x, t.y = cx * s, top * s
+		end
+	end
 	t.label, t.shield, t.serial = label, nil, ns.NextSerial()
 	ns.lastShown = t
-	t.straight = column
-	t.anim = column and "rise" or db.animation
-	t.pop, t.rise, t.duration, t.moveTime = pop, db.height, db.duration, db.duration
-	-- a DoT's number outlives the gap to its next tick (most tick every 3 sec), so the ticks join it
-	if tick and plate then t.duration = math.max(db.duration, DOT_LINGER) end
-	t.line = StackLine(plate or format("%d:%d", x, y), size)
-	if t.straight then
+	t.anim = anim or db.animation
+	t.rise, t.duration = RISE, db.duration
+	-- lines stack a normal hit's height apart: a crit's own size would push it lines and lines up
+	t.line = StackLine(plate or format("%d:%d", x, y), color.thick and SIZE or size)
+	if column then
 		t.dx = 0
 	else
 		arc = -arc
-		local s = SPREAD[db.spread] or SPREAD.normal
-		t.dx = arc * (s[1] + math.random() * s[2])
+		t.dx = arc * (DRIFT + math.random() * DRIFT_MORE)
 	end
-	-- DoT numbers on one plate hold at the end of their path for seconds, so each one already there
-	-- puts the next a line higher and on the other side, or they would end on the same spot
-	if tick and plate then
-		local n = 0
-		for _, o in ipairs(active) do
-			if o.tick and o.plate == plate then n = n + 1 end
+	local startY = t.y + (column and 0 or START_GAP) + t.line * db.scale
+	-- a crit starts a normal line above the rest, so at its size it doesn't cover hits landing with it
+	if color.thick then startY = startY + (SIZE + 6) * db.scale end
+	t:ClearAllPoints()
+	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", math.floor(t.x + 0.5), math.floor(startY + 0.5))
+	if pop then
+		t.bombed = 0
+		-- the bomb is drawn at its biggest size and shrunk: shrinking keeps text sharp, growing blurs it
+		local big = want * BOMB
+		if t.useDigits then
+			PlaceDigits(t, big)
+		else
+			t.text:SetFont(ns.FontPath(), math.min(FontMax(ns.FontPath()), math.floor(big + 0.5)), "OUTLINE")
+			t.text:SetTextHeight(big)
 		end
-		t.line = n * (size + 6)
-		t.dx = (n % 2 == 0 and -1 or 1) * math.abs(t.dx)
+		t.group:SetScript("OnUpdate", Bombing)
+	else
+		t.group:SetScript("OnUpdate", nil)
 	end
-	t.start = GetTime()
+	Plan(t, pop)
 	t:Show()
 	table.insert(active, t)
-	Move(t, 0)
+	t.group:Play()
 end
 
 root:SetScript("OnUpdate", function()
@@ -307,11 +510,6 @@ root:SetScript("OnUpdate", function()
 			table.remove(queued, i)
 			q.fn()
 		end
-	end
-	for i = #active, 1, -1 do
-		local t = active[i]
-		local elapsed = now - t.start
-		if elapsed >= t.duration then Release(i) else Move(t, elapsed) end
 	end
 end)
 
@@ -361,7 +559,10 @@ local ITEM_ICONS = { [64413] = 46017 }
 -- hangs on talents and glyphs the log can't see, so it stays a word.
 local HEAL_SHARE = { [64413] = 0.15, [47753] = 0.30 }
 local SACRED_SHIELD = 58597
+local SEEN_KINDS = { swing = true, spell = true, dot = true, heal = true, overheal = true, shield = true }
 local lastHeal = {}  -- GUID -> { amount, crit, at } of your last heal on them
+-- only the heals of the fight matter: a raid night would otherwise keep one for everyone you healed
+ns.On("PLAYER_REGEN_ENABLED", function() wipe(lastHeal) end)
 
 local function ShieldSize(id, guid)
 	local share = HEAL_SHARE[id]
@@ -410,6 +611,10 @@ local function Read(event, ...)
 		if auraType == "BUFF" and event == "SPELL_AURA_APPLIED" and MARKS[spellName] then
 			return "buff", nil, nil, SpellIcon(id), MARKS[spellName]
 		end
+	elseif event == "SPELL_ENERGIZE" or event == "SPELL_PERIODIC_ENERGIZE" then
+		-- mana, rage, energy or runic power gained; the power type rides where a miss's word does
+		local id, _, _, amount, powerType = ...
+		return "power", amount, nil, SpellIcon(id), powerType
 	elseif event == "SWING_MISSED" then
 		local missType = ...
 		return "miss", nil, nil, ATTACK_ICON, missType
@@ -439,17 +644,16 @@ local function Style(who, kind, amount, crit, miss)
 		end
 		if kind == "dot" then size = SIZE * 0.9 end
 		if crit then
-			if kind ~= "overheal" and db.classColorFor == "crit" and ns.classCrit then
-				color = ns.classCrit
-			elseif kind == "heal" then
+			if kind == "heal" then
 				color = COLOR.healCrit
 			elseif kind ~= "overheal" then
 				color = COLOR.crit
 			end
-			if db.critStyle == "big" then size = size * 1.5 end
-			if db.critStyle == "pop" then size, pop = size * 1.3, true end
-		elseif (kind == "swing" or kind == "spell") and db.bigGold and IsBig(amount) then
-			color, size = COLOR.big, SIZE * 1.15
+			-- damage crits grow and pop; a heal crit keeps a heal's size, standing out by its colour
+			if kind ~= "heal" and kind ~= "overheal" then
+				if db.critStyle == "big" then size = size * db.critSize end
+				if db.critStyle == "pop" then size, pop = size * db.critSize, true end
+			end
 		end
 	end
 	if who == "pet" then size = size * 0.8 end
@@ -457,29 +661,60 @@ local function Style(who, kind, amount, crit, miss)
 end
 
 --------------------------------------------------------------------------------
--- where a number goes: the Where grid. Each row (dmg = your damage, heal = your heals on others,
--- healMe / dmgMe = heals and damage landing on you) ticks any of: plate (over the unit's nameplate),
--- me (over your character), mine (My box), recv (Received box). Nothing ticked hides that kind.
+-- where a number goes: the Where grids. Your damage and heals on others (rows dmg, heal) tick any of
+-- plate (over the unit's nameplate), me (over your character) and mine (Output box); heals and damage
+-- landing on you (healMe, dmgMe) tick me and recv (Input box). Nothing ticked hides that kind.
 --------------------------------------------------------------------------------
 
--- tick: a DoT tick's amount, which joins the same DoT's number on that plate (see Show)
-local function Route(row, plate, name, label, color, size, icon, pop, amount, sign, tick)
+-- a colour drawn the way crits are (thick outline, sharp digit images when big), one per colour
+local thickOf = {}
+local function Thick(color)
+	if color.thick then return color end
+	thickOf[color] = thickOf[color] or { color[1], color[2], color[3], thick = true }
+	return thickOf[color]
+end
+
+local POP_HIT = 0.6  -- in a Pop box, a hit that isn't a crit against a crit's size
+
+-- one number into a box: as a line of its list (Scroll), or floating up out of the box's bottom
+-- edge with that box's animation, crits popping full size as on plates. Pop: every hit lands like
+-- a crit and rises, crits still the biggest.
+local function ToBox(key, label, color, size, icon, pop, amount, sign)
+	local style = ns.db.boxes[key].style
+	if style == "scroll" then
+		ns.BoxAdd(key, label, color, size, icon, amount, sign)
+		return
+	end
+	if style == "pop" and amount then
+		if not color.thick then size = math.max(size, SIZE * ns.db.critSize * POP_HIT) end
+		color, pop, style = Thick(color), true, "rise"
+	end
+	local x, y = ns.BoxSpot(key)
+	local scaled = size * ns.db.boxes[key].scale
+	if x then Show(nil, nil, x, y, label, color, scaled, icon, pop, style ~= "arc", style) end
+end
+
+-- the Spells page's two ticks for the spell being shown, set for each combat-log line: skipFloat keeps
+-- it off plates and over you, skipBox out of the boxes
+local skipFloat, skipBox = false, false
+
+local function Route(row, plate, name, label, color, size, icon, pop, amount, sign)
 	local db = ns.db
 	local r = db.route[row]
-	local onMe = row == "healMe" or row == "dmgMe"
-	-- your own character has no nameplate: for what lands on you, "over the nameplate" is over you
-	if r.plate and plate then
-		Show(plate, name, 0, 0, label, color, size, icon, pop, nil, tick)
-	elseif r.plate and not onMe and not r.mine and db.noPlateToBox then
+	local anim = (row == "heal" or row == "healMe" or row == "powerMe") and db.healAnimation or db.animation
+	if r.plate and plate and not skipFloat then
+		Show(plate, name, 0, 0, label, color, size, icon, pop, false, anim)
+	elseif r.plate and not skipFloat and not skipBox and not r.mine and db.noPlateToBox then
 		-- wanted over a nameplate that isn't on screen (pets, totems, far away): My box instead
-		ns.BoxAdd("mine", label, color, size, icon, amount, sign)
+		ToBox("mine", label, color, size, icon, pop, amount, sign)
 	end
-	if r.me or (onMe and r.plate) then
+	if r.me and not skipFloat then
 		local x, y = MeSpot()
-		Show(nil, nil, x, y, label, color, size, icon, pop, true)
+		Show(nil, nil, x, y, label, color, size, icon, pop, true, anim)
 	end
-	if r.mine then ns.BoxAdd("mine", label, color, size, icon, amount, sign) end
-	if r.recv then ns.BoxAdd("received", label, color, size, icon, amount, sign) end
+	if skipBox then return end
+	if r.mine then ToBox("mine", label, color, size, icon, pop, amount, sign) end
+	if r.recv then ToBox("received", label, color, size, icon, pop, amount, sign) end
 end
 
 local function Ticked(r) return r.plate or r.me or r.mine or r.recv end
@@ -509,17 +744,22 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 		ns.lastDest, ns.lastDestPlate = name, plate
 	end
 	local label, color, size, pop = Style(who, kind, amount, crit, miss)
-	Route(row, plate, name, label, color, size, icon, pop, amount, heal and "+" or "", kind == "dot" and amount or nil)
+	Route(row, plate, name, label, color, size, icon, pop, amount, heal and "+" or "")
 end
 
 local function Received(kind, amount, crit, icon, word)
 	if kind == "miss" then return end
 	if (kind == "overheal" or kind == "shield") and not Wanted("player", kind) then return end
 	local heal = HEALING[kind]
-	local row = heal and "healMe" or "dmgMe"
+	local row = kind == "power" and "powerMe" or heal and "healMe" or "dmgMe"
 	if not Ticked(ns.db.route[row]) then return end
 	local label, color
-	if kind == "shield" then
+	if kind == "power" then
+		if not amount or amount <= 0 then return end
+		Route(row, nil, nil, "+" .. Abbrev(amount), COLOR.power[word] or COLOR.power[0], SIZE * 0.9, icon, false,
+			amount, "+")
+		return
+	elseif kind == "shield" then
 		label, color = amount and "+" .. Abbrev(amount) or "Shield", COLOR.shield
 	elseif kind == "buff" then
 		label, color = word, COLOR.buff
@@ -532,42 +772,63 @@ local function Received(kind, amount, crit, icon, word)
 	else
 		label, color = "-" .. Abbrev(amount), crit and COLOR.takenCrit or COLOR.taken
 	end
-	local size = crit and SIZE * 1.2 or SIZE * 0.9
-	Route(row, nil, nil, label, color, size, icon, crit and ns.db.critStyle == "pop", amount, heal and "+" or "-")
+	-- a crit heal on you keeps a heal's size; a crit hit on you is bigger and pops
+	local big = crit and not heal
+	local size = big and SIZE * 1.2 or SIZE * 0.9
+	Route(row, nil, nil, label, color, size, icon, big and ns.db.critStyle == "pop", amount, heal and "+" or "-")
 end
 
 -- /bites last: the last combat-log lines RatBites read (yours, or landing on you), what it made of
--- each and where it went, to find out why a number didn't show
-local trace, TRACE_MAX = {}, 12
+-- each and where it went, to find out why a number didn't show. A raid sends hundreds of lines a
+-- second, so each is kept as its plain values in a ring of reused tables and only turned into text
+-- when /bites last asks.
+local trace, TRACE_MAX, traceAt = {}, 12, 0
 
-local function Trace(event, sourceGUID, destGUID, destName, kind, amount, id, spellName)
-	local db = ns.db
-	local onMe = destGUID == ns.playerGUID
-	local row = kind and (onMe and (HEALING[kind] and "healMe" or "dmgMe") or (HEALING[kind] and "heal" or "dmg"))
-	local r = row and db.route[row]
+local function Trace(event, destGUID, destName, kind, amount, id, spellName)
+	traceAt = traceAt % TRACE_MAX + 1
+	local e = trace[traceAt]
+	if not e then
+		e = {}
+		trace[traceAt] = e
+	end
+	e.time, e.event, e.onMe, e.dest, e.kind, e.amount = time(), event, destGUID == ns.playerGUID, destName, kind, amount
+	e.spell = type(spellName) == "string" and spellName or "melee"
+end
+
+local function TraceLine(e)
+	local row = e.kind and (e.onMe and (e.kind == "power" and "powerMe" or HEALING[e.kind] and "healMe" or "dmgMe")
+		or (HEALING[e.kind] and "heal" or "dmg"))
+	local r = row and ns.db.route[row]
 	local places = {}
 	if r then
 		for _, key in ipairs({ "plate", "me", "mine", "recv" }) do
 			if r[key] then places[#places + 1] = key end
 		end
 	end
-	local spell = type(spellName) == "string" and spellName or "melee"
-	local line = format("%s %s -> %s: %s %s%s", date("%H:%M:%S"), event, onMe and "you" or tostring(destName),
-		tostring(spell), kind and (kind .. " " .. tostring(amount or "")) or "not shown",
-		r and (" [" .. (#places > 0 and table.concat(places, " ") or "nowhere") .. "]") or "")
-	table.insert(trace, line)
-	if #trace > TRACE_MAX then table.remove(trace, 1) end
+	-- a setting that stops it before it gets anywhere
+	local show = ns.db.show
+	local stop = (e.kind == "overheal" and not show.overheal and "Overheal is unticked")
+		or (e.kind == "shield" and not show.shield and "Shields are off")
+		or (ns.db.noPlates[e.spell] and ns.db.noBoxes[e.spell] and "unticked in Spells")
+	return format("%s %s -> %s: %s %s%s", date("%H:%M:%S", e.time), e.event, e.onMe and "you" or tostring(e.dest),
+		e.spell, e.kind and (e.kind .. " " .. tostring(e.amount or "")) or "not shown",
+		stop and (" [hidden: " .. stop .. "]")
+		or r and (" [" .. (#places > 0 and table.concat(places, " ") or "nowhere") .. "]") or "")
 end
 
 function ns.PrintTrace()
 	if #trace == 0 then ns.Print("nothing read yet") return end
-	for _, line in ipairs(trace) do ns.Print(line) end
+	-- oldest first: the ring starts after the latest one
+	for i = 1, #trace do
+		ns.Print(TraceLine(trace[(traceAt + i - 1) % #trace + 1]))
+	end
 end
 
 ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFlags, destGUID, destName, _, ...)
 	local db = ns.db
-	if not db or not db.enabled or not ns.playerGUID then return end
+	if not db or not ns.app.enabled or not ns.playerGUID then return end
 	local who = Who(sourceGUID, sourceFlags)
+	skipFloat, skipBox = false, false
 	local toMe = destGUID == ns.playerGUID
 	if not who and not toMe then return end
 	if who and (event == "SPELL_HEAL" or event == "SPELL_PERIODIC_HEAL") then
@@ -577,7 +838,7 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 		lastHeal[destGUID] = h
 	end
 	local kind, amount, crit, icon, miss = Read(event, ...)
-	Trace(event, sourceGUID, destGUID, destName, kind, amount, ...)
+	Trace(event, destGUID, destName, kind, amount, ...)
 	if not kind then return end
 	-- your own auto-attacks show the weapon doing them: main hand for swings, the ranged slot for
 	-- Auto Shot, wands and throws (an empty slot keeps the plain sword)
@@ -586,6 +847,21 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 			icon = GetInventoryItemTexture("player", 16) or icon
 		elseif event == "RANGE_DAMAGE" or event == "RANGE_MISSED" then
 			icon = GetInventoryItemTexture("player", 18) or icon
+		end
+	end
+	-- a spell unticked in the Spells tab doesn't show (by name, so all its ranks are one); swings go
+	-- by the game's word for melee
+	if who then
+		local spell = event:find("^SWING") and MELEE or select(2, ...)
+		skipFloat, skipBox = false, false
+		if type(spell) == "string" then
+			skipFloat, skipBox = db.noPlates[spell] or false, db.noBoxes[spell] or false
+			if skipFloat and skipBox then return end
+		end
+		-- every spell of yours or your pet's that makes a number is kept, so procs and effects outside
+		-- the spellbook (Judgement heals, glyph splashes, Beacon copies) can be unticked too
+		if amount and SEEN_KINDS[kind] and type(spell) == "string" and not ns.char.seen[spell] then
+			ns.char.seen[spell] = icon or true
 		end
 	end
 	if kind == "shield" then
@@ -631,7 +907,6 @@ ns.On("PLAYER_LOGIN", function()
 			r, g, b = r + (1 - r) * lift, g + (1 - g) * lift, b + (1 - b) * lift
 		end
 		ns.classColor = { r, g, b }
-		ns.classCrit = { r, g, b, thick = true }
 	end
 end)
 
@@ -672,11 +947,10 @@ function ns.Test()
 	local db = ns.db
 	local guid, name = UnitGUID("target"), UnitName("target")
 	local plate = guid and ns.PlateFor(guid, name)
-	local critSize = SIZE * (db.critStyle == "big" and 1.5 or db.critStyle == "pop" and 1.3 or 1)
+	local critSize = SIZE * db.critSize
 	-- label, colour, size, pop, Where row
 	local hits = {
 		{ "1234", COLOR.normal, SIZE, false, "dmg" },
-		{ Abbrev(2331), COLOR.big, SIZE * 1.15, false, "dmg" },
 		{ Abbrev(12431), COLOR.crit, critSize, db.critStyle == "pop", "dmg" },
 		{ DODGE, COLOR.miss, SIZE * 0.8, false, "dmg" },
 		{ "+" .. Abbrev(812), COLOR.heal, SIZE, false, "heal" },
@@ -700,13 +974,11 @@ local legend
 -- label, colour, sample, size against a normal hit; built on each opening, so it follows the settings
 local function LegendEntries()
 	local db = ns.db
-	local critSize = db.critStyle == "big" and 1.5 or db.critStyle == "pop" and 1.3 or 1
+	local critSize = db.critSize
 	local normal = db.classColorFor == "normal" and ns.classColor or COLOR.normal
-	local crit = db.classColorFor == "crit" and ns.classCrit or COLOR.crit
-	local healCrit = db.classColorFor == "crit" and ns.classCrit or COLOR.healCrit
+	local crit, healCrit = COLOR.crit, COLOR.healCrit
 	return {
 		{ "Normal hit", normal, "1234", 1 },
-		{ "Big hit", db.bigGold and COLOR.big or normal, "2331", 1.15 },
 		{ "Critical hit", crit, "4.8k", critSize },
 		{ "Damage over time", normal, "412", 0.8 },
 		{ "Pet", normal, "310", 0.8 },
@@ -717,6 +989,7 @@ local function LegendEntries()
 		{ "Shield", COLOR.shield, "+177", 0.85 },
 		{ "Damage taken", COLOR.taken, "-640", 0.9 },
 		{ "Damage taken crit", COLOR.takenCrit, "-2.1k", 1.2 },
+		{ "Mana gained", COLOR.power[0], "+1.2k", 0.9 },
 	}
 end
 
@@ -766,14 +1039,13 @@ end
 local function PaintLegend()
 	local db = ns.db
 	local icon = GetInventoryItemTexture("player", 16) or ATTACK_ICON
-	local iconSize = SIZE * db.iconScale
 	for i, e in ipairs(LegendEntries()) do
 		local row = legend.rows[i]
 		local color = e[2]
 		row.icon:SetTexture(icon)
-		row.icon:SetWidth(iconSize); row.icon:SetHeight(iconSize)
+		row.icon:SetWidth(SIZE); row.icon:SetHeight(SIZE)
 		if db.icons then row.icon:Show() else row.icon:Hide() end
-		row.number:SetFont(ns.FontPath(), SIZE * e[4], color.thick and "THICKOUTLINE" or "OUTLINE")
+		row.number:SetFont(ns.FontPath(), math.min(FONT_MAX, SIZE * e[4]), color.thick and "THICKOUTLINE" or "OUTLINE")
 		row.number:SetTextColor(color[1], color[2], color[3])
 		row.number:SetText(e[3])
 		row.name:SetText(e[1])
