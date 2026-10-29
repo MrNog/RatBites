@@ -7,6 +7,7 @@ local ADDON, ns = ...
 local FADE_AT = 0.65      -- share of a number's time before its fade starts
 local SIZE = 20           -- a normal hit's font size at scale 1, and every icon's size
 ns.SIZE = SIZE
+local RISE = 60          -- how far a floating number travels
 local MAX_TEXTS = 40
 local ATTACK_ICON = [[Interface\Icons\INV_Sword_04]]
 
@@ -21,7 +22,6 @@ ns.FONTS = {
 -- from the softer normal numbers at a glance.
 local COLOR = {
 	normal = { 0.72, 0.72, 0.72 },
-	big = { 1, 0.82, 0 },
 	crit = { 1, 0.4, 0, thick = true },
 	miss = { 0.9, 0.9, 0.9 },
 	heal = { 0.4, 0.88, 0.45 },
@@ -101,22 +101,6 @@ local function Abbrev(v)
 	return tostring(v)
 end
 ns.Abbrev = Abbrev
-
--- A hit well above your recent ones is a big hit: compared with the last 8 normal hits of the last
--- 30 sec, once there are at least 3.
-local samples = {}
-local function IsBig(amount)
-	local now = GetTime()
-	for i = #samples, 1, -1 do
-		if now - samples[i].t > 30 then table.remove(samples, i) end
-	end
-	local sum = 0
-	for _, s in ipairs(samples) do sum = sum + s.v end
-	local big = #samples >= 3 and amount >= sum / #samples * 1.2
-	table.insert(samples, { t = now, v = amount })
-	if #samples > 8 then table.remove(samples, 1) end
-	return big
-end
 
 --------------------------------------------------------------------------------
 -- the floating texts
@@ -363,8 +347,9 @@ local function Plan(t, pop)
 end
 
 -- plate: the nameplate the number starts over (nil: the spot x, y in UIParent units); column: a
--- fixed spot's straight column, which always rises
-local function Show(plate, name, x, y, label, color, size, icon, pop, column)
+-- fixed spot's straight column (no sideways drift); anim: how it moves, the Motion setting for heals
+-- or for damage
+local function Show(plate, name, x, y, label, color, size, icon, pop, column, anim)
 	if #active >= MAX_TEXTS then
 		local oldest = active[1]
 		oldest.group:Stop()
@@ -401,8 +386,8 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 		t.icon:SetPoint("RIGHT", t.text, "LEFT", -4, 0)
 	end
 	-- an icon has a normal hit's size; a crit's grows with its number, to half its height
-	local iconSize = SIZE * db.scale * db.iconScale
-	if color.thick then iconSize = math.max(iconSize, want * 0.5 * db.iconScale) end
+	local iconSize = SIZE * db.scale
+	if color.thick then iconSize = math.max(iconSize, want * 0.5) end
 	t.icon:SetWidth(iconSize); t.icon:SetHeight(iconSize)
 	if icon and db.icons then
 		t.icon:SetTexture(icon)
@@ -423,8 +408,8 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	end
 	t.label, t.shield, t.serial = label, nil, ns.NextSerial()
 	ns.lastShown = t
-	t.anim = column and "rise" or db.animation
-	t.rise, t.duration = db.height, db.duration
+	t.anim = anim or db.animation
+	t.rise, t.duration = RISE, db.duration
 	-- lines stack a normal hit's height apart: a crit's own size would push it lines and lines up
 	t.line = StackLine(plate or format("%d:%d", x, y), color.thick and SIZE or size)
 	if column then
@@ -603,8 +588,6 @@ local function Style(who, kind, amount, crit, miss)
 				if db.critStyle == "big" then size = size * db.critSize end
 				if db.critStyle == "pop" then size, pop = size * db.critSize, true end
 			end
-		elseif (kind == "swing" or kind == "spell") and db.bigGold and IsBig(amount) then
-			color, size = COLOR.big, SIZE * 1.15
 		end
 	end
 	if who == "pet" then size = size * 0.8 end
@@ -612,28 +595,55 @@ local function Style(who, kind, amount, crit, miss)
 end
 
 --------------------------------------------------------------------------------
--- where a number goes: the Where grid. Each row (dmg = your damage, heal = your heals on others,
--- healMe / dmgMe = heals and damage landing on you) ticks any of: plate (over the unit's nameplate),
--- me (over your character), mine (My box), recv (Received box). Nothing ticked hides that kind.
+-- where a number goes: the Where grids. Your damage and heals on others (rows dmg, heal) tick any of
+-- plate (over the unit's nameplate), me (over your character) and mine (Output box); heals and damage
+-- landing on you (healMe, dmgMe) tick me and recv (Input box). Nothing ticked hides that kind.
 --------------------------------------------------------------------------------
+
+-- a colour drawn the way crits are (thick outline, sharp digit images when big), one per colour
+local thickOf = {}
+local function Thick(color)
+	if color.thick then return color end
+	thickOf[color] = thickOf[color] or { color[1], color[2], color[3], thick = true }
+	return thickOf[color]
+end
+
+local POP_HIT = 0.6  -- in a Pop box, a hit that isn't a crit against a crit's size
+
+-- one number into a box: as a line of its list (Scroll), or floating up out of the box's bottom
+-- edge with that box's animation, crits popping full size as on plates. Pop: every hit lands like
+-- a crit and rises, crits still the biggest.
+local function ToBox(key, label, color, size, icon, pop, amount, sign)
+	local style = ns.db.boxes[key].style
+	if style == "scroll" then
+		ns.BoxAdd(key, label, color, size, icon, amount, sign)
+		return
+	end
+	if style == "pop" and amount then
+		if not color.thick then size = math.max(size, SIZE * ns.db.critSize * POP_HIT) end
+		color, pop, style = Thick(color), true, "rise"
+	end
+	local x, y = ns.BoxSpot(key)
+	local scaled = size * ns.db.boxes[key].scale
+	if x then Show(nil, nil, x, y, label, color, scaled, icon, pop, style ~= "arc", style) end
+end
 
 local function Route(row, plate, name, label, color, size, icon, pop, amount, sign)
 	local db = ns.db
 	local r = db.route[row]
-	local onMe = row == "healMe" or row == "dmgMe"
-	-- your own character has no nameplate: for what lands on you, "over the nameplate" is over you
+	local anim = (row == "heal" or row == "healMe") and db.healAnimation or db.animation
 	if r.plate and plate then
-		Show(plate, name, 0, 0, label, color, size, icon, pop)
-	elseif r.plate and not onMe and not r.mine and db.noPlateToBox then
+		Show(plate, name, 0, 0, label, color, size, icon, pop, false, anim)
+	elseif r.plate and not r.mine and db.noPlateToBox then
 		-- wanted over a nameplate that isn't on screen (pets, totems, far away): My box instead
-		ns.BoxAdd("mine", label, color, size, icon, amount, sign)
+		ToBox("mine", label, color, size, icon, pop, amount, sign)
 	end
-	if r.me or (onMe and r.plate) then
+	if r.me then
 		local x, y = MeSpot()
-		Show(nil, nil, x, y, label, color, size, icon, pop, true)
+		Show(nil, nil, x, y, label, color, size, icon, pop, true, anim)
 	end
-	if r.mine then ns.BoxAdd("mine", label, color, size, icon, amount, sign) end
-	if r.recv then ns.BoxAdd("received", label, color, size, icon, amount, sign) end
+	if r.mine then ToBox("mine", label, color, size, icon, pop, amount, sign) end
+	if r.recv then ToBox("received", label, color, size, icon, pop, amount, sign) end
 end
 
 local function Ticked(r) return r.plate or r.me or r.mine or r.recv end
@@ -733,7 +743,7 @@ end
 
 ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFlags, destGUID, destName, _, ...)
 	local db = ns.db
-	if not db or not db.enabled or not ns.playerGUID then return end
+	if not db or not ns.app.enabled or not ns.playerGUID then return end
 	local who = Who(sourceGUID, sourceFlags)
 	local toMe = destGUID == ns.playerGUID
 	if not who and not toMe then return end
@@ -848,7 +858,6 @@ function ns.Test()
 	-- label, colour, size, pop, Where row
 	local hits = {
 		{ "1234", COLOR.normal, SIZE, false, "dmg" },
-		{ Abbrev(2331), COLOR.big, SIZE * 1.15, false, "dmg" },
 		{ Abbrev(12431), COLOR.crit, critSize, db.critStyle == "pop", "dmg" },
 		{ DODGE, COLOR.miss, SIZE * 0.8, false, "dmg" },
 		{ "+" .. Abbrev(812), COLOR.heal, SIZE, false, "heal" },
@@ -877,7 +886,6 @@ local function LegendEntries()
 	local crit, healCrit = COLOR.crit, COLOR.healCrit
 	return {
 		{ "Normal hit", normal, "1234", 1 },
-		{ "Big hit", db.bigGold and COLOR.big or normal, "2331", 1.15 },
 		{ "Critical hit", crit, "4.8k", critSize },
 		{ "Damage over time", normal, "412", 0.8 },
 		{ "Pet", normal, "310", 0.8 },
@@ -937,12 +945,11 @@ end
 local function PaintLegend()
 	local db = ns.db
 	local icon = GetInventoryItemTexture("player", 16) or ATTACK_ICON
-	local iconSize = SIZE * db.iconScale
 	for i, e in ipairs(LegendEntries()) do
 		local row = legend.rows[i]
 		local color = e[2]
 		row.icon:SetTexture(icon)
-		row.icon:SetWidth(iconSize); row.icon:SetHeight(iconSize)
+		row.icon:SetWidth(SIZE); row.icon:SetHeight(SIZE)
 		if db.icons then row.icon:Show() else row.icon:Hide() end
 		row.number:SetFont(ns.FontPath(), math.min(FONT_MAX, SIZE * e[4]), color.thick and "THICKOUTLINE" or "OUTLINE")
 		row.number:SetTextColor(color[1], color[2], color[3])

@@ -6,7 +6,7 @@ local ADDON, ns = ...
 local button
 
 local function Place()
-	local a = math.rad(ns.db.minimapAngle)
+	local a = math.rad(ns.app.minimapAngle)
 	button:ClearAllPoints()
 	button:SetPoint("CENTER", Minimap, "CENTER", 80 * math.cos(a), 80 * math.sin(a))
 end
@@ -34,7 +34,7 @@ local function Create()
 			local mx, my = Minimap:GetCenter()
 			local px, py = GetCursorPosition()
 			local sc = Minimap:GetEffectiveScale()
-			ns.db.minimapAngle = math.deg(math.atan2(py / sc - my, px / sc - mx))
+			ns.app.minimapAngle = math.deg(math.atan2(py / sc - my, px / sc - mx))
 			Place()
 		end)
 	end)
@@ -60,7 +60,7 @@ end
 
 -- shows or hides the button after the "Minimap button" setting changes
 function ns.UpdateMinimapButton()
-	if ns.db.minimapButton then
+	if ns.app.minimapButton then
 		button = button or Create()
 		Place()
 		button:Show()

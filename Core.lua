@@ -1,57 +1,61 @@
 local ADDON, ns = ...
 
 -- One profile's settings. ns.db is the active profile.
--- route: the Where grid. Rows dmg (your damage), heal (your heals on others), healMe and dmgMe (heals
--- and damage landing on you); each ticks plate (over the unit's nameplate, or over you for what lands
--- on you), me (over your character), mine (My box) and recv (Received box)
+-- route: the two Where grids. What you do: rows dmg (your damage) and heal (your heals on others), each
+-- ticking plate (over their nameplate), me (over your character) and mine (Output box). What lands on
+-- you: rows healMe and dmgMe, each ticking me and recv (Input box).
 -- noPlateToBox: a number wanted over a nameplate that isn't on screen goes to My box instead
 -- joinShields: a shield your heal makes (Val'anyr, Divine Aegis) joins that heal's number
--- animation: "arc", "rise" or "stay" (Bites.lua's Plan)
+-- animation, healAnimation: how damage and heals move, on plates and over you: "arc", "rise" or "stay"
+-- (Bites.lua's Plan)
 -- critStyle: "pop" = starts large and settles, "big" = larger
 -- numbers: "short" = 12.4k, "full" = 12,431
 ns.DEFAULTS = {
-	enabled = true,
 	route = {
-		dmg = { plate = true, me = false, mine = false, recv = false },
-		heal = { plate = true, me = false, mine = false, recv = false },
-		healMe = { plate = false, me = false, mine = false, recv = true },
-		dmgMe = { plate = false, me = false, mine = false, recv = true },
+		dmg = { plate = true, me = false, mine = false },
+		heal = { plate = true, me = false, mine = false },
+		healMe = { me = false, recv = true },
+		dmgMe = { me = false, recv = true },
 	},
 	noPlateToBox = true,
 	joinShields = true,
 	animation = "arc",
-	height = 70,
+	healAnimation = "arc",
 	duration = 1.5,
-	-- each box: its spot and size, where new lines come in ("up" = at the bottom), text alignment,
-	-- merge (sec: the same spell again within this joins its line as a total with "xN"; 0 = off) and
+	-- each box: text size (scale, on top of the Look page's), style ("scroll" = a list of lines;
+	-- "arc", "rise" or "stay" = numbers float out of it like on plates; "pop" = every hit lands like a
+	-- crit, then rises), its spot and size, where new lines come in ("up" = at the bottom), text
+	-- alignment, merge (sec: the same spell again within this joins its line as a total with "xN"; 0 = off) and
 	-- how long a line stays (sec)
 	boxes = {
-		mine = { x = 300, y = -60, w = 200, h = 220, scroll = "up", align = "left", merge = 3, time = 5 },
-		received = { x = -300, y = -60, w = 200, h = 220, scroll = "up", align = "left", merge = 0, time = 5 },
+		mine = { scale = 1, style = "scroll", x = 300, y = -60, w = 200, h = 220, scroll = "up", align = "left", merge = 3, time = 5 },
+		received = { scale = 1, style = "scroll", x = -300, y = -60, w = 200, h = 220, scroll = "up", align = "left", merge = 0,
+			time = 5 },
 	},
 	scale = 1,
-	iconScale = 1,  -- an icon's size against its number's text
 	font = "lsm:Blender Pro",
 	icons = true,
 	hideSpells = {},   -- spell name -> true: the ones you unticked there
 	classColorFor = "off",  -- "normal" = your normal damage in your class colour
-	bigGold = true,
 	critStyle = "pop",
 	critSize = 5,  -- a crit (Pop or Bigger) against a normal hit
 	numbers = "short",
 	show = { normal = true, crit = true, swing = true, spell = true, dot = true, miss = true, pet = true,
 		shield = true, overheal = true },
+}
+
+-- The app's own settings: one set for the account, whatever profile is in use.
+ns.APP_DEFAULTS = {
+	enabled = true,
 	hideBlizzard = true,
 	bgOn = true,
 	minimapButton = true,
 	minimapAngle = 220,
 }
 
--- The profiles every account has; a profile is made from the defaults the first time it is used.
-ns.PROFILES = { "Default", "Healer", "DPS", "Tank" }
-
--- How the Healer and DPS profiles start: only what differs from the defaults (Default and Tank start
--- plain). A font from SharedMedia that isn't installed falls back to the game's own.
+-- The presets Copy from offers: only what differs from the defaults (the Tank preset is the defaults).
+-- A font from SharedMedia that isn't installed falls back to the game's own.
+ns.PRESETS = { "Healer", "DPS", "Tank" }
 ns.ROLE_DEFAULTS = {
 	Healer = {
 		route = {
@@ -72,11 +76,10 @@ ns.ROLE_DEFAULTS = {
 		route = {
 			dmg = { plate = true, mine = true },
 			heal = { plate = false },
-			healMe = { mine = true, recv = true },
+			healMe = { recv = true },
 			dmgMe = { recv = false },
 		},
 		classColorFor = "normal",
-		height = 50,
 		duration = 1.6,
 		font = "lsm:Blender Pro",
 		boxes = {
@@ -127,8 +130,8 @@ end
 local BLIZZARD_CVARS = { "CombatDamage", "PetMeleeDamage", "CombatHealing" }
 
 function ns.ApplyBlizzardText()
-	local db, root = ns.db, RatBitesDB
-	if db.enabled and db.hideBlizzard then
+	local app, root = ns.app, RatBitesDB
+	if app.enabled and app.hideBlizzard then
 		if not root.blizzSaved then
 			root.blizzSaved = {}
 			for _, cvar in ipairs(BLIZZARD_CVARS) do root.blizzSaved[cvar] = GetCVar(cvar) end
@@ -168,6 +171,23 @@ end
 -- crits keep standing out).
 local function Upgrade(db)
 	UpgradeRoute(db)
+	-- the grids lost the places that meant the same as another: over the nameplate of what lands on
+	-- you is over you, and each side has its own box
+	local r = db.route
+	for _, key in ipairs({ "healMe", "dmgMe" }) do
+		if r[key].plate then r[key].me = true end
+		if r[key].mine then r[key].recv = true end
+		r[key].plate, r[key].mine = nil, nil
+	end
+	for _, key in ipairs({ "dmg", "heal" }) do
+		if r[key].recv then r[key].mine = true end
+		r[key].recv = nil
+	end
+	-- settings cut for good: big hits in gold, icon size, travel distance, the spells filter (the
+	-- Spells page does it); the app's settings moved out of the profiles
+	db.bigGold, db.iconScale, db.height = nil, nil, nil
+	db.show.spell = true
+	db.enabled, db.hideBlizzard, db.bgOn, db.minimapButton, db.minimapAngle = nil, nil, nil, nil, nil
 	-- the Spells tab lists the spellbook only: spells once collected from the combat log go
 	db.seen, db.seenClean = nil, nil
 	-- settings made simpler: each old choice to the nearest one left
@@ -183,6 +203,11 @@ local function Upgrade(db)
 	local font = db.font and db.font:match("^lsm:(.+)")
 	if not (font and ns.CRIT_GLYPHS[font]) then db.font = "lsm:Blender Pro" end
 	-- crits went from 2.7x to 5x by default: a profile still on the old default follows, once
+	-- heals got their own animation: they start as damage moves
+	if not db.healAnimSet then
+		db.healAnimation = db.animation
+		db.healAnimSet = true
+	end
 	if not db.critSizeSet then
 		if db.critSize == 2.7 then db.critSize = 5 end
 		db.critSizeSet = true
@@ -204,22 +229,34 @@ local function Upgrade(db)
 end
 
 --------------------------------------------------------------------------------
--- profiles: shared by the account; each character picks one, or one per talent spec
+-- profiles: shared by the account; any character uses any of them, with another one for its second
+-- spec if it likes
 --------------------------------------------------------------------------------
 
--- A new (or reset) profile starts from its role's setup, then the defaults fill the rest.
+-- A profile is made from the defaults the first time it is used.
 local function Profile(name)
 	local profiles = RatBitesDB.profiles
-	profiles[name] = profiles[name] or deepCopy(ns.ROLE_DEFAULTS[name] or {})
+	profiles[name] = profiles[name] or {}
 	copyDefaults(ns.DEFAULTS, profiles[name])
 	Upgrade(profiles[name])
 	return profiles[name]
 end
 
--- the profile this character uses now: its spec's one with dual spec on, else its own choice
+-- every profile's name, Default first, the rest by name
+function ns.ProfileNames()
+	local names = {}
+	for name in pairs(RatBitesDB.profiles) do
+		if name ~= "Default" then names[#names + 1] = name end
+	end
+	table.sort(names)
+	table.insert(names, 1, "Default")
+	return names
+end
+
+-- the profile this character uses now: its second spec's one while in that spec, else its own
 function ns.ActiveProfile()
 	local char = ns.char
-	if char.dual then return char.spec[GetActiveTalentGroup() or 1] end
+	if char.second and (GetActiveTalentGroup() or 1) == 2 then return char.second end
 	return char.profile
 end
 
@@ -239,24 +276,56 @@ function ns.UseProfile()
 	ns.ProfileChanged()
 end
 
--- the active profile's setting for this character (with dual spec on, for the spec in use)
-function ns.SetProfile(name)
-	local char = ns.char
-	if char.dual then char.spec[GetActiveTalentGroup() or 1] = name else char.profile = name end
+-- this character's profile (spec "second": the one for its second spec, nil = the same)
+function ns.SetProfile(name, spec)
+	if spec == "second" then ns.char.second = name else ns.char.profile = name end
 	ns.UseProfile()
 end
 
--- both say in chat what they did: on the Profiles tab nothing else shows the change
-function ns.CopyProfile(from)
-	local name = ns.ActiveProfile()
-	if from == name then
-		ns.Print("You are already using " .. name .. ": pick another profile to copy from.")
-		return
+-- a new profile from the defaults, used from now on in the spec you are in; false and why when it can't
+function ns.CreateProfile(name)
+	name = strtrim(name or "")
+	if name == "" then return false, "Type a name first." end
+	if RatBitesDB.profiles[name] then return false, name .. " already exists." end
+	Profile(name)
+	local char = ns.char
+	if char.second and (GetActiveTalentGroup() or 1) == 2 then char.second = name else char.profile = name end
+	ns.UseProfile()
+	return true
+end
+
+-- a profile no character uses any more goes; the characters on it go to Default
+function ns.DeleteProfile(name)
+	if name == "Default" or not RatBitesDB.profiles[name] then return end
+	RatBitesDB.profiles[name] = nil
+	for _, char in pairs(RatBitesDB.chars) do
+		if char.profile == name then char.profile = "Default" end
+		if char.second == name then char.second = nil end
 	end
-	RatBitesDB.profiles[name] = deepCopy(Profile(from))
 	ns.db = nil
 	ns.UseProfile()
-	ns.Print("Copied " .. from .. "'s settings into " .. name .. ".")
+	ns.Print(name .. " is deleted.")
+end
+
+-- copies another profile, or a preset ("preset:Healer"), into the one in use; says in chat what it did
+function ns.CopyProfile(from)
+	local name = ns.ActiveProfile()
+	local preset = from:match("^preset:(.+)")
+	local copy
+	if preset then
+		copy = deepCopy(ns.ROLE_DEFAULTS[preset] or {})
+		copyDefaults(ns.DEFAULTS, copy)
+	else
+		if from == name then
+			ns.Print("You are already using " .. name .. ": pick another profile to copy from.")
+			return
+		end
+		copy = deepCopy(Profile(from))
+	end
+	RatBitesDB.profiles[name] = copy
+	ns.db = nil
+	ns.UseProfile()
+	ns.Print("Copied " .. (preset and preset .. " preset" or from) .. " into " .. name .. ".")
 end
 
 function ns.ResetProfile()
@@ -374,11 +443,27 @@ ns.On("ADDON_LOADED", function(name)
 		end
 		root.profiles = { Default = old }
 	end
+	-- the app's settings, once in each profile, start from the Default profile's
+	if not root.app then
+		root.app = {}
+		for k in pairs(ns.APP_DEFAULTS) do root.app[k] = root.profiles.Default and root.profiles.Default[k] end
+	end
+	copyDefaults(ns.APP_DEFAULTS, root.app)
+	ns.app = root.app
 	root.chars = root.chars or {}
 	local key = UnitName("player") .. " - " .. GetRealmName()
 	root.chars[key] = root.chars[key] or {}
-	ns.char = root.chars[key]
-	copyDefaults({ profile = "Default", dual = false, spec = { "Default", "Default" } }, ns.char)
+	local char = root.chars[key]
+	ns.char = char
+	-- "switch with my talents" was a tick and a profile for each spec
+	if char.dual ~= nil then
+		if char.dual and char.spec then
+			char.profile = char.spec[1]
+			if char.spec[2] ~= char.spec[1] then char.second = char.spec[2] end
+		end
+		char.dual, char.spec = nil, nil
+	end
+	copyDefaults({ profile = "Default" }, char)
 	ns.db = Profile(ns.ActiveProfile())
 end)
 
@@ -391,9 +476,7 @@ ns.On("PLAYER_LOGIN", function()
 end)
 
 ns.On("ACTIVE_TALENT_GROUP_CHANGED", function()
-	if ns.char.dual then ns.UseProfile() end
-	-- the Profiles tab marks the spec in use
-	if ns.RefreshOptions then ns.RefreshOptions() end
+	if ns.char.second then ns.UseProfile() end
 end)
 
 -- /rb is the game's Raid Browser

@@ -82,7 +82,7 @@ local function Layout(box)
 	local room, offset = box:GetHeight(), 0
 	for i = 1, #box.lines do
 		local line = box.lines[i]
-		local h = math.max(line.size, ns.SIZE * ns.db.scale * ns.db.iconScale) + LINE_GAP
+		local h = math.max(line.size, ns.SIZE * ns.db.scale * ns.db.boxes[box.key].scale) + LINE_GAP
 		if offset + h > room then
 			for j = #box.lines, i, -1 do Drop(box, j) end
 			return
@@ -241,7 +241,9 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	line.serial = ns.NextSerial()
 	-- a crit in a box is only a little bigger than its neighbours (the plates show it full size), so
 	-- one crit can't fill the box; its line keeps the room its text takes
-	size = math.min(size, ns.SIZE * BOX_CRIT) * db.scale
+	-- the box's own text size on top of the Look page's
+	local boxScale = db.boxes[key].scale
+	size = math.min(size, ns.SIZE * BOX_CRIT) * db.scale * boxScale
 	line.text:SetFont(ns.FontPath(), size, color.thick and "THICKOUTLINE" or "OUTLINE")
 	line.text:SetText(label)
 	line.text:SetTextColor(color[1], color[2], color[3])
@@ -249,7 +251,7 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 		line.icon:SetTexture(icon)
 		-- one icon size for every line, so the icons stack in a straight column and crits grow only
 		-- their text
-		local iconSize = ns.SIZE * db.scale * db.iconScale
+		local iconSize = ns.SIZE * db.scale * boxScale
 		line.icon:SetWidth(iconSize); line.icon:SetHeight(iconSize)
 		line.icon:Show(); line.edge:Show()
 	else
@@ -283,6 +285,14 @@ function ns.SetBoxesUnlocked(on)
 end
 
 -- after a setting changes: the scroll direction or the scale may move every line
+-- where a box's floating numbers start: the middle of its bottom edge, in UIParent units
+function ns.BoxSpot(key)
+	local box = boxes[key]
+	if not box then return end
+	local x, y = box:GetCenter(), box:GetBottom()
+	if x and y then return x, y end
+end
+
 function ns.RelayoutBoxes()
 	for _, box in pairs(boxes) do Layout(box) end
 end
