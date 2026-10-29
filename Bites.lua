@@ -194,6 +194,14 @@ local function FontMax(path)
 	fontMax[path] = low
 	return low
 end
+
+-- /bites font: the biggest size the client takes for the font in use, and a crit's size now
+function ns.ReportFont()
+	local db = ns.db
+	local crit = SIZE * db.critSize * db.scale
+	print(format("|cffffd200RatBites|r font takes up to %d, a crit wants %d (stretched %.1fx)",
+		FontMax(ns.FontPath()), crit, math.max(1, crit / FontMax(ns.FontPath()))))
+end
 local BOMB, BOMB_TIME = 2.5, 0.25
 
 local function Finished(group)

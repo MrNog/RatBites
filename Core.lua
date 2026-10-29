@@ -399,6 +399,8 @@ SlashCmdList.RATBITES = function(msg)
 		ns.SetBoxesUnlocked(not ns.BoxesUnlocked())
 	elseif msg == "last" then
 		ns.PrintTrace()
+	elseif msg == "font" then
+		ns.ReportFont()
 	elseif msg == "plates" then
 		ns.ReportPlates()
 	else
