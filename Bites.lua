@@ -277,7 +277,8 @@ end
 -- The characters are textures of the number's own frame, like its icon: an animation moves and
 -- fades a frame's own textures, not frames inside it.
 
--- the characters laid out centred on the frame at size want (the pop redraws them as it shrinks)
+-- the characters laid out at size want (the pop redraws them as it shrinks), the icon and number
+-- centred together on the frame
 local function PlaceDigits(t, want)
 	local set, k = t.glyphSet, want / t.glyphSet.size
 	local cell, pen = ns.CRIT_CELL * k, 0
@@ -288,13 +289,14 @@ local function PlaceDigits(t, want)
 	local first = set[t.glyphLabel:sub(1, 1)]
 	local left = first[6] * k
 	local width = (pen + last[6] + last[5]) * k - left
+	local shift = t.icon:IsShown() and (t.icon:GetWidth() + 4) / 2 or 0
 	pen = 0
 	for i = 1, n do
 		local g = set[t.glyphLabel:sub(i, i)]
 		local tex = t.glyphs[i]
 		tex:SetWidth(g[5] * k); tex:SetHeight(cell)
 		tex:ClearAllPoints()
-		tex:SetPoint("LEFT", t, "CENTER", (pen + g[6]) * k - left - width / 2, 0)
+		tex:SetPoint("LEFT", t, "CENTER", (pen + g[6]) * k - left - width / 2 + shift, 0)
 		pen = pen + g[7] + CRIT_TRACK
 	end
 end
@@ -420,6 +422,7 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	else
 		t.icon:Hide(); t.edge:Hide()
 	end
+	if t.useDigits then PlaceDigits(t, want) end
 	t.plate, t.name, t.x, t.y = plate, name, x, y
 	-- A number on a plate starts over the plate's top, read once here: from then on the animation
 	-- moves it, since a plate shifts a pixel or two every frame as you or the camera move.

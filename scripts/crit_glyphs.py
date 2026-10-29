@@ -25,14 +25,17 @@ BLP = os.path.join(ROOT, "..", "Okanvil", "scripts", "png2blp_raw.py")
 
 
 def fit(path):
-    # the biggest size whose tallest character, outline included, fits a cell
+    # The biggest size at which every character, outline included, fits a cell with the digits
+    # centred in it, so the number sits level with the icon beside it (the comma hangs below).
     size = CELL_H
     while size > 10:
         font = ImageFont.truetype(path, size)
-        top = min(font.getbbox(c, anchor="ls", stroke_width=STROKE)[1] for c in CHARS)
-        bottom = max(font.getbbox(c, anchor="ls", stroke_width=STROKE)[3] for c in CHARS)
-        if bottom - top <= CELL_H - 2 * PAD:
-            return font, -top + PAD
+        box = lambda c: font.getbbox(c, anchor="ls", stroke_width=STROKE)
+        baseline = CELL_H / 2 - (min(box(c)[1] for c in "0123456789") + max(box(c)[3] for c in "0123456789")) / 2
+        top = min(box(c)[1] for c in CHARS) + baseline
+        bottom = max(box(c)[3] for c in CHARS) + baseline
+        if top >= PAD and bottom <= CELL_H - PAD:
+            return font, round(baseline)
         size -= 2
     sys.exit("font too tall")
 
