@@ -427,8 +427,9 @@ local function MakesNumbers(i, name)
 			break
 		end
 	end
+	-- a tooltip the game had no text for yet is read again next time, not taken as a no
+	if scanTip:NumLines() > 0 then makesNumbers[name] = found end
 	scanTip:Hide()
-	makesNumbers[name] = found
 	return found
 end
 
@@ -441,11 +442,39 @@ local function Spellbook(into)
 			if name == autoAttack then
 				-- swings come in the combat log under the game's word for melee
 				into[MELEE] = GetSpellTexture(i, BOOKTYPE_SPELL) or true
-			elseif name and not IsPassiveSpell(i, BOOKTYPE_SPELL) and not into[name] and MakesNumbers(i, name) then
+			elseif name and not IsPassiveSpell(i, BOOKTYPE_SPELL) and not into[name]
+				and (ns.char.seen[name] or MakesNumbers(i, name)) then
+				-- one that made a number in a fight is in, whatever its tooltip says
 				into[name] = GetSpellTexture(i, BOOKTYPE_SPELL) or true
 			end
 		end
 	end
+end
+
+-- /bites spells: every spellbook spell the Spells page leaves out, with the first tooltip line that
+-- has a number, to see why it was judged to make none
+function ns.ReportSpells()
+	local shown = {}
+	Spellbook(shown)
+	local out = 0
+	for tab = 1, GetNumSpellTabs() do
+		local _, _, offset, count = GetSpellTabInfo(tab)
+		for i = offset + 1, offset + count do
+			local name = GetSpellName(i, BOOKTYPE_SPELL)
+			if name and not shown[name] and not IsPassiveSpell(i, BOOKTYPE_SPELL) then
+				makesNumbers[name] = nil
+				local again = MakesNumbers(i, name)
+				local line = "no line with a number"
+				for n = 1, scanTip:NumLines() do
+					local text = _G["RatBitesScanTipTextLeft" .. n]:GetText()
+					if text and text:find("%d") then line = text break end
+				end
+				ns.Print(format("%s: left out%s (%s)", name, again and ", in on a second read" or "", line))
+				out = out + 1
+			end
+		end
+	end
+	ns.Print(out == 0 and "every spellbook spell that makes a number is listed" or out .. " left out")
 end
 
 -- The spellbook's spells by name, then a heading and the procs and effects that made numbers in a

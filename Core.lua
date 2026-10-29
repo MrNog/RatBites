@@ -495,6 +495,8 @@ SlashCmdList.RATBITES = function(msg)
 		ns.PrintTrace()
 	elseif msg == "font" then
 		ns.ReportFont()
+	elseif msg == "spells" then
+		ns.ReportSpells()
 	elseif msg == "plates" then
 		ns.ReportPlates()
 	else
