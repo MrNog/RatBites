@@ -576,7 +576,7 @@ end
 --------------------------------------------------------------------------------
 
 local TAB_H, TAB_PAD, TAB_GAP = 28, 13, 3
-local TAB_X, TAB_Y = 90, -42   -- clear of the medallion over the top-left corner
+local TAB_Y = -42   -- below the medallion over the top-left corner
 
 local function PaintTab(tab, on)
 	if on then
@@ -636,7 +636,11 @@ function ns.CreateOptions()
 			PaintTab(tabs[k], k == key)
 		end
 	end
-	local x = TAB_X
+	-- the row of tabs sits centred over the window
+	local row = CreateFrame("Frame", nil, body)
+	row:SetHeight(TAB_H)
+	row:SetPoint("TOP", body, "TOP", 0, TAB_Y)
+	local x = 0
 	for _, def in ipairs(PAGES) do
 		local key = def[1]
 		local tab = CreateFrame("Button", nil, body)
@@ -647,7 +651,7 @@ function ns.CreateOptions()
 		tab:SetWidth(tab.text:GetStringWidth() + TAB_PAD * 2)
 		tab:SetHeight(TAB_H)
 		-- the open tab covers the hairline under it, so it joins the page
-		tab:SetPoint("TOPLEFT", body, "TOPLEFT", x, TAB_Y)
+		tab:SetPoint("TOPLEFT", row, "TOPLEFT", x, 0)
 		tab:SetFrameLevel(body:GetFrameLevel() + 3)
 		tab:SetScript("OnClick", function() PlaySound("igMainMenuOptionCheckBoxOn"); Open(key) end)
 		x = x + tab:GetWidth() + TAB_GAP
@@ -659,6 +663,7 @@ function ns.CreateOptions()
 		pages[key] = page
 		lowest = math.min(lowest, def[3](page))
 	end
+	row:SetWidth(x - TAB_GAP)
 
 	-- Minimized, the window folds into its medallion, floating where the medallion was: drag it away,
 	-- click it to open the window again around it. The test and unlocked boxes keep going meanwhile.
