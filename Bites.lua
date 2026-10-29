@@ -156,13 +156,44 @@ end
 -- its spot is set once, then animations slide it. Sideways moves at a steady pace while the rise
 -- eases out, which together make the arc; the fade is an animation too.
 -- The client turns down a font size that is too big (the text then keeps its old, small font) and
--- won't draw text bigger by scaling its frame either, so a number bigger than FONT_MAX (a big crit)
--- takes its font at FONT_MAX and is stretched to its size with SetTextHeight, as Blizzard's own
--- combat text grows its crits.
+-- won't draw text bigger by scaling its frame either, so a number bigger than the biggest size it
+-- takes (a big crit) gets that size and is stretched the rest with SetTextHeight, as Blizzard's own
+-- combat text grows its crits. That biggest size depends on the font and the client, so it is
+-- tried out once per font: the bigger it is, the less a crit is stretched and the sharper it stays.
 -- A popping crit lands like a bomb: it appears BOMB times bigger and shrinks smoothly back over
 -- BOMB_TIME, sized by hand for that moment, and only then does its path start.
 local START_GAP = 12  -- how far above the plate a number starts
-local FONT_MAX = 32
+local FONT_MAX = 32   -- a size every client takes
+local FONT_TRY = 200  -- the biggest size tried
+
+local fontMax = {}  -- font path -> the biggest size the client takes for it
+local function FontMax(path)
+	if fontMax[path] then return fontMax[path] end
+	local probe = root.probe
+	if not probe then
+		probe = root:CreateFontString(nil, "OVERLAY")
+		probe:Hide()
+		root.probe = probe
+	end
+	-- a size the client turns down leaves the font string on its old size
+	local function Takes(size)
+		probe:SetFont(path, FONT_MAX, "OUTLINE")
+		probe:SetFont(path, size, "OUTLINE")
+		local _, got = probe:GetFont()
+		return got and math.abs(got - size) < 1
+	end
+	local low, high = FONT_MAX, FONT_TRY
+	if Takes(high) then
+		low = high
+	else
+		while high - low > 1 do
+			local mid = math.floor((low + high) / 2)
+			if Takes(mid) then low = mid else high = mid end
+		end
+	end
+	fontMax[path] = low
+	return low
+end
 local BOMB, BOMB_TIME = 2.5, 0.25
 
 local function Finished(group)
@@ -273,9 +304,10 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t:SetAlpha(1)
 	-- a crit draws above every other number, so it shows through a pile of heals
 	t:SetFrameLevel(root:GetFrameLevel() + (color.thick and 20 or 1))
-	-- the size it should show at (Text size included): its font at up to FONT_MAX, stretched the rest
+	-- the size it should show at (Text size included): its font as big as the client takes it,
+	-- stretched the rest
 	local want = size * db.scale
-	local fontPx = math.min(FONT_MAX, math.floor(want + 0.5))
+	local fontPx = math.min(FontMax(ns.FontPath()), math.floor(want + 0.5))
 	t.want = want
 	-- a new font string takes no text before it has a font
 	-- A stretched number stretches its outline too: past the font limit the thick outline turns into
