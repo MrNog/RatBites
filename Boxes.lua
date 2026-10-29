@@ -97,17 +97,21 @@ local function Layout(box)
 	end
 end
 
+-- a line that has faded out drops, and the lines after it close up the gap it leaves
 local function Fade(box)
 	local now, life = GetTime(), ns.db.boxes[box.key].time
+	local dropped
 	for i = #box.lines, 1, -1 do
 		local line = box.lines[i]
 		local age = now - line.at
 		if age >= life then
 			Drop(box, i)
+			dropped = true
 		elseif age > life - FADE then
 			line:SetAlpha((life - age) / FADE)
 		end
 	end
+	if dropped then Layout(box) end
 end
 
 local function Create(key)
