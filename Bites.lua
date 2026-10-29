@@ -255,12 +255,22 @@ local function Leg(a, x, y, duration, smoothing, delay)
 	a:SetStartDelay(delay or 0)
 end
 
+-- The number's font at its size: drawn at that size when the client takes it (sharp), stretched
+-- past the biggest size it takes. The thick outline is for normal-sized crits only: on a big number
+-- it is a heavy black edge, so a crit past THICK_MAX takes the thin one.
+local THICK_MAX = 32
+local function SetSize(t)
+	t.text:SetFont(ns.FontPath(), t.fontPx, t.thick and t.want <= THICK_MAX and "THICKOUTLINE" or "OUTLINE")
+	if t.want > t.fontPx then t.text:SetTextHeight(t.want) end
+end
+
 local function Bombing(group, elapsed)
 	local t = group.owner
 	t.bombed = t.bombed + elapsed
 	local f = 1 - t.bombed / BOMB_TIME
 	if f <= 0 then
-		t.text:SetTextHeight(t.want)
+		-- landed: drawn again at its own size, so it is sharp rather than resampled
+		SetSize(t)
 		group:SetScript("OnUpdate", nil)
 		return
 	end
@@ -316,13 +326,9 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	-- stretched the rest
 	local want = size * db.scale
 	local fontPx = math.min(FontMax(ns.FontPath()), math.floor(want + 0.5))
-	t.want = want
+	t.want, t.fontPx, t.thick = want, fontPx, color.thick
 	-- a new font string takes no text before it has a font
-	-- A stretched number stretches its outline too: past the font limit the thick outline turns into
-	-- a fat black edge, so it takes the thin one.
-	local thick = color.thick and want / fontPx < 1.2
-	t.text:SetFont(ns.FontPath(), fontPx, thick and "THICKOUTLINE" or "OUTLINE")
-	t.text:SetTextHeight(want)
+	SetSize(t)
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
 	-- an icon has a normal hit's size; a crit's grows with its number, to half its height
