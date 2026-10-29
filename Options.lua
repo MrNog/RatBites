@@ -274,14 +274,18 @@ local function ShowPage(page)
 	y = Grid(page, y,
 		{ { "me", "Over me" }, { "recv", "Input box" } },
 		{ { "healMe", "Heals on me" }, { "dmgMe", "Damage on me" }, { "powerMe", "Mana, energy, rage" } })
+	-- normal and crit hits, chosen for each kind of hit
 	y = Section(page, y, "Which hits")
-	local ticks = {}
-	for _, def in ipairs({ { "Crits", "crit" }, { "Normal hits", "normal" }, { "Auto-attacks", "swing" },
-		{ "DoTs", "dot" }, { "Pet", "pet" }, { "Misses", "miss" }, { "Overheal", "overheal" } }) do
-		local get, set = flag("show", def[2])
-		ticks[#ticks + 1] = { def[1], get, set }
-	end
-	y = Ticks(page, y, ticks)
+	y = Table(page, y, { { "normal", "Normal" }, { "crit", "Crit" } },
+		{ { "spell", "Abilities" }, { "swing", "Auto-attacks" }, { "dot", "DoTs & bleeds" }, { "pet", "Pet" } },
+		function(row, def, col, x, cy)
+			local cell = CreateFrame("Button", nil, row)
+			cell:SetWidth(30); cell:SetHeight(30)
+			cell:SetPoint("CENTER", page, "TOPLEFT", x, cy)
+			Tick(cell, flag("show", "hits", def[1], col[1])):SetPoint("CENTER")
+		end)
+	local misses, overheal = { flag("show", "miss") }, { flag("show", "overheal") }
+	y = Ticks(page, y - 4, { { "Misses", misses[1], misses[2] }, { "Overheal", overheal[1], overheal[2] } })
 	y = Choice(page, y, "Shields from my heals",
 		{ { "heal", "+11k (+240)" }, { "line", "+11k   +240" }, { "off", "+11k" } },
 		function()
@@ -472,9 +476,11 @@ local function Spellbook(into)
 	end
 end
 
--- The spellbook's spells by name, then a heading and the procs and effects that made numbers in a
--- fight but aren't in the spellbook. A heading takes a whole line: the cell beside it stays empty.
-local HEADING, BLANK = {}, {}
+-- The spellbook's spells by name, then headed groups of what made numbers in a fight but isn't in
+-- the spellbook: procs and effects, then resources (the mana, energy or rage talents give you, as
+-- Focused Attacks or Relentless Strikes). A heading takes a whole line: the cells beside it stay empty.
+local BLANK = {}
+local PROCS, RESOURCES = { heading = "PROCS AND EFFECTS" }, { heading = "RESOURCES" }
 
 local function byName(a, b) return a[1] < b[1] end
 
@@ -484,16 +490,23 @@ local function SpellList(list)
 	wipe(list)
 	for name, icon in pairs(known) do list[#list + 1] = { name, icon } end
 	table.sort(list, byName)
-	local procs = {}
+	local resource = ns.char.resources or {}
+	local groups = { { PROCS }, { RESOURCES } }
 	for name, icon in pairs(ns.char.seen) do
-		if not known[name] then procs[#procs + 1] = { name, icon } end
+		if not known[name] then
+			local g = groups[resource[name] and 2 or 1]
+			g[#g + 1] = { name, icon }
+		end
 	end
-	if #procs > 0 then
-		table.sort(procs, byName)
-		while #list % SPELL_COLS ~= 0 do list[#list + 1] = BLANK end
-		list[#list + 1] = HEADING
-		for _ = 2, SPELL_COLS do list[#list + 1] = BLANK end
-		for _, entry in ipairs(procs) do list[#list + 1] = entry end
+	for _, g in ipairs(groups) do
+		if #g > 1 then
+			local heading = table.remove(g, 1)
+			table.sort(g, byName)
+			while #list % SPELL_COLS ~= 0 do list[#list + 1] = BLANK end
+			list[#list + 1] = heading
+			for _ = 2, SPELL_COLS do list[#list + 1] = BLANK end
+			for _, entry in ipairs(g) do list[#list + 1] = entry end
+		end
 	end
 	while #list % SPELL_COLS ~= 0 do list[#list + 1] = BLANK end
 end
@@ -519,9 +532,9 @@ local function SpellsPage(page)
 		first = math.max(1, math.min(first, #list - shown + 1))
 		for i, cell in ipairs(cells) do
 			local entry = list[first + i - 1]
-			if entry == HEADING then
+			if entry and entry.heading then
 				cell.spell = nil
-				cell.label:SetText("PROCS AND EFFECTS")
+				cell.label:SetText(entry.heading)
 				cell.label:SetTextColor(rgb(C.accentText))
 				cell.icon:Hide(); cell.plates:Hide(); cell.boxes:Hide()
 				cell:Show()
@@ -715,6 +728,15 @@ local function AppPage(page)
 	local y = Section(page, TOP, "App", true, "The same for every profile.")
 	y = Check(page, y, "RatBites on", app("enabled"))
 	y = Check(page, y, "Hide the game's own numbers", app("hideBlizzard"))
+	if ns.SoundPack() then y = Check(page, y, "Crit sounds", app("critSounds")) end
+	if ns.PackVolumes() then
+		-- each step plays a crit sound at the new volume, to hear it
+		local get, set = app("critVolume")
+		y = Stepper(page, y, "Crit volume", 25, 100, 25, function(v) return format("%d%%", v) end, get, function(v)
+			set(v)
+			ns.PlayRole(ns.CritRole("spell"))
+		end)
+	end
 	y = Check(page, y, "Minimap button", app("minimapButton"))
 	y = Check(page, y, "Background art", app("bgOn"))
 	return y
@@ -857,6 +879,8 @@ function ns.CreateOptions()
 	local test = ns.RedButton(foot, "", 120, 22)
 	test:SetPoint("RIGHT", move, "LEFT", -6, 0)
 	test:SetScript("OnClick", function() ns.SetTestLoop(not ns.TestLooping()); Changed() end)
+	-- test as another class and role: its colour on the numbers, its crit sound
+	DropControl(foot, 170, ns.PreviewValues, ns.PreviewKey, ns.SetPreview):SetPoint("RIGHT", test, "LEFT", -6, 0)
 	refreshers[#refreshers + 1] = function()
 		who:SetText("Profile: |cffffd100" .. ns.ActiveProfile() .. "|r")
 		test:SetText(ns.TestLooping() and "Stop test" or "Test")

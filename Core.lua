@@ -46,8 +46,15 @@ ns.DEFAULTS = {
 	critStyle = "pop",
 	critSize = 5,  -- a crit (Pop or Bigger) against a normal hit
 	numbers = "short",
-	show = { normal = true, crit = true, swing = true, spell = true, dot = true, miss = true, pet = true,
-		shield = true, overheal = true },
+	-- Which hits: hits[kind] = { normal, crit } for abilities (spell), auto-attacks (swing), DoTs and
+	-- bleeds (dot) and your pet's hits (pet); misses, shields and overheal on their own
+	show = {
+		hits = {
+			spell = { normal = true, crit = true }, swing = { normal = true, crit = true },
+			dot = { normal = true, crit = true }, pet = { normal = true, crit = true },
+		},
+		miss = true, shield = true, overheal = true,
+	},
 }
 
 -- The app's own settings: one set for the account, whatever profile is in use.
@@ -56,6 +63,8 @@ ns.APP_DEFAULTS = {
 	hideBlizzard = true,
 	bgOn = true,
 	minimapButton = true,
+	critSounds = true,  -- a sound on your crits, when a sound pack is loaded (Sounds.lua)
+	critVolume = 100,   -- % : the pack's copy at that volume (its vNN folder), 100 = the sound itself
 	minimapAngle = 220,
 }
 
@@ -197,7 +206,16 @@ local function Upgrade(db)
 	-- settings cut for good: big hits in gold, icon size, travel distance, the spells filter (the
 	-- Spells page does it); the app's settings moved out of the profiles
 	db.bigGold, db.iconScale, db.height = nil, nil, nil
-	db.show.spell = true
+	-- Which hits was one list (Crits, Normal hits, Auto-attacks, DoTs, Pet) that every number had to
+	-- pass twice: into the grid, each kind keeping the normal and crit hits it showed
+	local show = db.show
+	if show.normal ~= nil or show.crit ~= nil then
+		for _, kind in ipairs({ "spell", "swing", "dot", "pet" }) do
+			local on = show[kind] ~= false
+			show.hits[kind] = { normal = on and show.normal ~= false, crit = on and show.crit ~= false }
+		end
+		show.normal, show.crit, show.spell, show.swing, show.dot, show.pet = nil, nil, nil, nil, nil, nil
+	end
 	db.enabled, db.hideBlizzard, db.bgOn, db.minimapButton, db.minimapAngle = nil, nil, nil, nil, nil
 	-- the Spells tab lists the spellbook only: spells once collected from the combat log go
 	db.seen, db.seenClean = nil, nil
@@ -506,6 +524,8 @@ SlashCmdList.RATBITES = function(msg)
 		ns.ReportFont()
 	elseif msg == "plates" then
 		ns.ReportPlates()
+	elseif msg == "sound" or msg == "sounds" then
+		ns.TestSounds()
 	else
 		ns.OpenOptions()
 	end
