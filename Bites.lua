@@ -614,8 +614,11 @@ local function Style(who, kind, amount, crit, miss)
 			elseif kind ~= "overheal" then
 				color = COLOR.crit
 			end
-			if db.critStyle == "big" then size = size * db.critSize end
-			if db.critStyle == "pop" then size, pop = size * db.critSize, true end
+			-- damage crits grow and pop; a heal crit keeps a heal's size, standing out by its colour
+			if kind ~= "heal" and kind ~= "overheal" then
+				if db.critStyle == "big" then size = size * db.critSize end
+				if db.critStyle == "pop" then size, pop = size * db.critSize, true end
+			end
 		elseif (kind == "swing" or kind == "spell") and db.bigGold and IsBig(amount) then
 			color, size = COLOR.big, SIZE * 1.15
 		end
@@ -699,8 +702,10 @@ local function Received(kind, amount, crit, icon, word)
 	else
 		label, color = "-" .. Abbrev(amount), crit and COLOR.takenCrit or COLOR.taken
 	end
-	local size = crit and SIZE * 1.2 or SIZE * 0.9
-	Route(row, nil, nil, label, color, size, icon, crit and ns.db.critStyle == "pop", amount, heal and "+" or "-")
+	-- a crit heal on you keeps a heal's size; a crit hit on you is bigger and pops
+	local big = crit and not heal
+	local size = big and SIZE * 1.2 or SIZE * 0.9
+	Route(row, nil, nil, label, color, size, icon, big and ns.db.critStyle == "pop", amount, heal and "+" or "-")
 end
 
 -- /bites last: the last combat-log lines RatBites read (yours, or landing on you), what it made of
