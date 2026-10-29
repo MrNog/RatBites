@@ -389,92 +389,85 @@ local function Confirm(question, yes, onYes)
 end
 
 
--- Your spells in a grid two wide that scrolls with the mouse wheel: only the spellbook spells that
--- make numbers (no passives), with Auto Attack as Melee. A tick shows a spell, untick it to hide
--- it. The grid is read again each time the window refreshes.
+-- Your spells in a grid two wide that scrolls with the mouse wheel: Melee and your class's spells
+-- that make numbers, then the procs and effects you've made numbers with. A tick shows a spell,
+-- untick it to hide it. The grid is read again each time the window refreshes.
 local SPELL_LINES, SPELL_COLS = 12, 2
 
--- Spells from the spellbook that make numbers: their tooltip gives an amount of damage ("1,200 Holy
--- damage", "150% weapon damage") or healing ("heals ... for 4,888"). Words alone don't count:
--- "reduces damage taken", "immune to all damage" are not hits. Shields (Power Word: Shield,
--- Anti-Magic Shell, Sacred Shield's cast) and spells that only pass on a share of other heals
--- (Beacon of Light) are left out: their cast makes no number of its own.
-local function DealsAmount(text)
-	if text:find("absorb") then return false end
-	if text:find("%d+%% weapon damage") or text:find("%d[%d,]* to %d[%d,]* %a+ damage")
-		or text:find("%d[%d,]* %a+ damage") or text:find("%d[%d,]* damage") then
-		return true
-	end
-	-- a heal "for 4,888 to 5,444" or "heals 1,234"; "healing ... for 20 sec" (a buff's time) is not one
-	return text:find("heal") and (text:find("for %d[%d,]* to %d") or text:find("heals? %d[%d,]*[^%d%%]"))
-end
+-- The spells that make numbers, by class, by their English names (every rank shares its name). The
+-- page lists the ones in your spellbook. Shields, buffs and spells that only pass on a share of other
+-- heals are left out: their cast makes no number of its own.
+local CLASS_SPELLS = {
+	DEATHKNIGHT = {
+		"Blood Boil", "Blood Strike", "Corpse Explosion", "Death and Decay", "Death Coil", "Death Pact",
+		"Death Strike", "Frost Strike", "Heart Strike", "Howling Blast", "Icy Touch", "Obliterate",
+		"Plague Strike", "Rune Strike", "Rune Tap", "Scourge Strike", "Unholy Blight",
+	},
+	DRUID = {
+		"Claw", "Entangling Roots", "Faerie Fire (Feral)", "Ferocious Bite", "Healing Touch", "Hurricane",
+		"Insect Swarm", "Lacerate", "Lifebloom", "Maim", "Mangle (Bear)", "Mangle (Cat)", "Maul",
+		"Moonfire", "Nourish", "Pounce", "Rake", "Ravage", "Regrowth", "Rejuvenation", "Rip", "Shred",
+		"Starfall", "Starfire", "Swiftmend", "Swipe (Bear)", "Swipe (Cat)", "Thorns", "Tranquility",
+		"Typhoon", "Wild Growth", "Wrath",
+	},
+	HUNTER = {
+		"Aimed Shot", "Arcane Shot", "Auto Shot", "Black Arrow", "Chimera Shot", "Counterattack",
+		"Explosive Shot", "Explosive Trap", "Immolation Trap", "Kill Shot", "Mongoose Bite", "Multi-Shot",
+		"Raptor Strike", "Scatter Shot", "Serpent Sting", "Silencing Shot", "Steady Shot", "Volley",
+		"Wyvern Sting",
+	},
+	MAGE = {
+		"Arcane Barrage", "Arcane Blast", "Arcane Explosion", "Arcane Missiles", "Blast Wave", "Blizzard",
+		"Cone of Cold", "Dragon's Breath", "Fire Blast", "Fireball", "Flamestrike", "Frost Nova",
+		"Frostbolt", "Frostfire Bolt", "Ice Lance", "Living Bomb", "Pyroblast", "Scorch", "Shoot",
+	},
+	PALADIN = {
+		"Avenger's Shield", "Consecration", "Crusader Strike", "Divine Storm", "Exorcism",
+		"Flash of Light", "Hammer of the Righteous", "Hammer of Wrath", "Hand of Reckoning", "Holy Light",
+		"Holy Shield", "Holy Shock", "Holy Wrath", "Lay on Hands", "Retribution Aura", "Seal of Command",
+		"Seal of Corruption", "Seal of Light", "Seal of Righteousness", "Seal of Vengeance",
+		"Seal of Wisdom", "Shield of Righteousness", "Divine Plea",
+	},
+	PRIEST = {
+		"Binding Heal", "Circle of Healing", "Desperate Prayer", "Devouring Plague", "Divine Hymn",
+		"Flash Heal", "Greater Heal", "Heal", "Holy Fire", "Holy Nova", "Lesser Heal", "Mind Blast",
+		"Mind Flay", "Mind Sear", "Penance", "Prayer of Healing", "Prayer of Mending", "Renew",
+		"Shadow Word: Death", "Shadow Word: Pain", "Shoot", "Smite", "Vampiric Touch", "Dispersion",
+		"Hymn of Hope",
+	},
+	ROGUE = {
+		"Ambush", "Backstab", "Deadly Throw", "Envenom", "Eviscerate", "Fan of Knives", "Garrote",
+		"Ghostly Strike", "Gouge", "Hemorrhage", "Killing Spree", "Mutilate", "Rupture", "Shiv",
+		"Sinister Strike", "Throw",
+	},
+	SHAMAN = {
+		"Chain Heal", "Chain Lightning", "Earth Shield", "Earth Shock", "Fire Nova", "Flame Shock",
+		"Frost Shock", "Healing Stream Totem", "Healing Wave", "Lava Burst", "Lava Lash",
+		"Lesser Healing Wave", "Lightning Bolt", "Lightning Shield", "Magma Totem", "Riptide",
+		"Searing Totem", "Stormstrike", "Thunderstorm", "Water Shield", "Mana Spring Totem",
+	},
+	WARLOCK = {
+		"Chaos Bolt", "Conflagrate", "Corruption", "Curse of Agony", "Curse of Doom", "Dark Pact",
+		"Death Coil", "Drain Life", "Drain Soul", "Haunt", "Health Funnel", "Hellfire", "Immolate",
+		"Incinerate", "Life Tap", "Rain of Fire", "Searing Pain", "Seed of Corruption", "Shadow Bolt",
+		"Shadowburn", "Shadowflame", "Shadowfury", "Shoot", "Soul Fire", "Unstable Affliction",
+	},
+	WARRIOR = {
+		"Bladestorm", "Bloodthirst", "Cleave", "Concussion Blow", "Devastate", "Enraged Regeneration",
+		"Execute", "Heroic Strike", "Heroic Throw", "Intercept", "Mortal Strike", "Overpower", "Rend",
+		"Revenge", "Shattering Throw", "Shield Slam", "Shockwave", "Slam", "Thunder Clap", "Throw",
+		"Victory Rush", "Whirlwind", "Bloodrage",
+	},
+}
 
-local scanTip, makesNumbers = nil, {}
-local function MakesNumbers(i, name)
-	if makesNumbers[name] ~= nil then return makesNumbers[name] end
-	if not scanTip then
-		scanTip = CreateFrame("GameTooltip", "RatBitesScanTip", nil, "GameTooltipTemplate")
-	end
-	scanTip:SetOwner(WorldFrame, "ANCHOR_NONE")
-	scanTip:ClearLines()
-	scanTip:SetSpell(i, BOOKTYPE_SPELL)
-	local found = false
-	for line = 1, scanTip:NumLines() do
-		local fs = _G["RatBitesScanTipTextLeft" .. line]
-		local text = fs and fs:GetText()
-		if text and DealsAmount(text:lower()) then
-			found = true
-			break
-		end
-	end
-	-- a tooltip the game had no text for yet is read again next time, not taken as a no
-	if scanTip:NumLines() > 0 then makesNumbers[name] = found end
-	scanTip:Hide()
-	return found
-end
-
+-- Melee, then the class's spells you have: a spell you know by name is one in your spellbook
 local function Spellbook(into)
-	local autoAttack = GetSpellInfo(6603)
-	for tab = 1, GetNumSpellTabs() do
-		local _, _, offset, count = GetSpellTabInfo(tab)
-		for i = offset + 1, offset + count do
-			local name = GetSpellName(i, BOOKTYPE_SPELL)
-			if name == autoAttack then
-				-- swings come in the combat log under the game's word for melee
-				into[MELEE] = GetSpellTexture(i, BOOKTYPE_SPELL) or true
-			elseif name and not IsPassiveSpell(i, BOOKTYPE_SPELL) and not into[name]
-				and (ns.char.seen[name] or MakesNumbers(i, name)) then
-				-- one that made a number in a fight is in, whatever its tooltip says
-				into[name] = GetSpellTexture(i, BOOKTYPE_SPELL) or true
-			end
-		end
+	into[MELEE] = select(3, GetSpellInfo(6603)) or true  -- Attack
+	local _, class = UnitClass("player")
+	for _, name in ipairs(CLASS_SPELLS[class] or {}) do
+		local known, _, icon = GetSpellInfo(name)
+		if known then into[name] = icon or true end
 	end
-end
-
--- /bites spells: every spellbook spell the Spells page leaves out, with the first tooltip line that
--- has a number, to see why it was judged to make none
-function ns.ReportSpells()
-	local shown = {}
-	Spellbook(shown)
-	local out = 0
-	for tab = 1, GetNumSpellTabs() do
-		local _, _, offset, count = GetSpellTabInfo(tab)
-		for i = offset + 1, offset + count do
-			local name = GetSpellName(i, BOOKTYPE_SPELL)
-			if name and not shown[name] and not IsPassiveSpell(i, BOOKTYPE_SPELL) then
-				makesNumbers[name] = nil
-				local again = MakesNumbers(i, name)
-				local line = "no line with a number"
-				for n = 1, scanTip:NumLines() do
-					local text = _G["RatBitesScanTipTextLeft" .. n]:GetText()
-					if text and text:find("%d") then line = text break end
-				end
-				ns.Print(format("%s: left out%s (%s)", name, again and ", in on a second read" or "", line))
-				out = out + 1
-			end
-		end
-	end
-	ns.Print(out == 0 and "every spellbook spell that makes a number is listed" or out .. " left out")
 end
 
 -- The spellbook's spells by name, then a heading and the procs and effects that made numbers in a
