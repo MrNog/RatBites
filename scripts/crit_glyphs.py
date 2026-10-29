@@ -4,7 +4,9 @@
 
 Each character is white with a black outline baked in, so the game can tint it to the crit's colour
 (the black stays black). Writes Media/Crit/<key>.png, converts it to Media/Crit/<key>.blp through
-Okanvil's png2blp_dxt5.py, and writes CritGlyphs.lua with each character's spot in its texture.
+Okanvil's png2blp_raw.py (uncompressed: Pillow before 11.2 can't write DXT, and its DXT5 path then
+saves raw pixels the game reads as garbage), and writes CritGlyphs.lua with each character's spot
+in its texture.
 """
 import os
 import subprocess
@@ -19,7 +21,7 @@ PAD = 4
 STROKE = 7
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BLP = os.path.join(ROOT, "..", "Okanvil", "scripts", "png2blp_dxt5.py")
+BLP = os.path.join(ROOT, "..", "Okanvil", "scripts", "png2blp_raw.py")
 
 
 def fit(path):
@@ -54,7 +56,7 @@ def build(key, path):
     os.makedirs(os.path.join(ROOT, "Media", "Crit"), exist_ok=True)
     png = os.path.join(ROOT, "Media", "Crit", key + ".png")
     img.save(png)
-    subprocess.check_call([sys.executable, BLP, png, png[:-4] + ".blp", "%dx%d" % (W, H)])
+    subprocess.check_call([sys.executable, BLP, png, png[:-4] + ".blp"])
     return glyphs, font.size
 
 
