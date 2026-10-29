@@ -20,7 +20,6 @@ ns.DEFAULTS = {
 	noPlateToBox = true,
 	joinShields = true,
 	animation = "arc",
-	follow = false,    -- numbers over a plate keep up with it as the camera turns
 	height = 70,
 	duration = 1.5,
 	-- each box: its spot and size, where new lines come in ("up" = at the bottom), text alignment,
@@ -39,7 +38,6 @@ ns.DEFAULTS = {
 	bigGold = true,
 	critStyle = "pop",
 	critSize = 5,  -- a crit (Pop or Bigger) against a normal hit
-	critDraw = "image",  -- big crits: "image" = character images, "sharp" = text kept sharp, "text" = stretched
 	spread = "normal",
 	numbers = "short",
 	show = { normal = true, crit = true, swing = true, spell = true, dot = true, miss = true, pet = true,
