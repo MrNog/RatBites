@@ -372,7 +372,10 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", math.floor(t.x + 0.5), math.floor(startY + 0.5))
 	if pop then
 		t.bombed = 0
-		t.text:SetTextHeight(want * BOMB)
+		-- the bomb is drawn at its biggest size and shrunk: shrinking keeps text sharp, growing blurs it
+		local big = want * BOMB
+		t.text:SetFont(ns.FontPath(), math.min(FontMax(ns.FontPath()), math.floor(big + 0.5)), "OUTLINE")
+		t.text:SetTextHeight(big)
 		t.group:SetScript("OnUpdate", Bombing)
 	else
 		t.group:SetScript("OnUpdate", nil)
