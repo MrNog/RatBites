@@ -232,10 +232,6 @@ local function GeneralPage(page)
 		function() ns.SetTestLoop(not ns.TestLooping()) end,
 		function() return ns.TestLooping() and "Stop" or "Start" end)
 	y = Check(page, y, "Hide the game's own numbers", flag("hideBlizzard"))
-	y = Section(page, y, "Window", nil, "This settings window and the minimap button.")
-	y = Check(page, y, "Minimap button", flag("minimapButton"))
-	y = Check(page, y, "Background art", flag("bgOn"))
-	y = Stepper(page, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end, flag("bgArt"))
 	return y
 end
 
@@ -551,6 +547,11 @@ local function ProfilesPage(page)
 		function() return "Export" end)
 	y = Action(page, y, "Load a friend's profile into it", function() ns.OpenShare("import") end,
 		function() return "Import" end)
+	-- the app itself comes last: this window and the minimap button
+	y = Section(page, y, "Window", nil, "This settings window and the minimap button.")
+	y = Check(page, y, "Minimap button", flag("minimapButton"))
+	y = Check(page, y, "Background art", flag("bgOn"))
+	y = Stepper(page, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end, flag("bgArt"))
 	return y
 end
 
