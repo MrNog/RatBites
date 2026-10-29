@@ -285,8 +285,9 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t.text:SetTextHeight(want)
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
-	-- every icon has one size (a normal hit's), crits too: only their text grows
+	-- an icon has a normal hit's size; a crit's grows with its number, to half its height
 	local iconSize = SIZE * db.scale * db.iconScale
+	if color.thick then iconSize = math.max(iconSize, want * 0.5 * db.iconScale) end
 	t.icon:SetWidth(iconSize); t.icon:SetHeight(iconSize)
 	if icon and db.icons then
 		t.icon:SetTexture(icon)
