@@ -273,7 +273,7 @@ local function ShowPage(page)
 	y = Section(page, y, "What lands on you")
 	y = Grid(page, y,
 		{ { "me", "Over me" }, { "recv", "Input box" } },
-		{ { "healMe", "Heals on me" }, { "dmgMe", "Damage on me" } })
+		{ { "healMe", "Heals on me" }, { "dmgMe", "Damage on me" }, { "powerMe", "Mana, energy, rage" } })
 	y = Section(page, y, "Which hits")
 	local ticks = {}
 	for _, def in ipairs({ { "Crits", "crit" }, { "Normal hits", "normal" }, { "Auto-attacks", "swing" },
@@ -448,25 +448,55 @@ local function Spellbook(into)
 	end
 end
 
+-- The spellbook's spells by name, then a heading and the procs and effects that made numbers in a
+-- fight but aren't in the spellbook. A heading takes a whole line: the cell beside it stays empty.
+local HEADING, BLANK = {}, {}
+
+local function byName(a, b) return a[1] < b[1] end
+
+local function SpellList(list)
+	local known = {}
+	Spellbook(known)
+	wipe(list)
+	for name, icon in pairs(known) do list[#list + 1] = { name, icon } end
+	table.sort(list, byName)
+	local procs = {}
+	for name, icon in pairs(ns.char.seen) do
+		if not known[name] then procs[#procs + 1] = { name, icon } end
+	end
+	if #procs > 0 then
+		table.sort(procs, byName)
+		while #list % SPELL_COLS ~= 0 do list[#list + 1] = BLANK end
+		list[#list + 1] = HEADING
+		for _ = 2, SPELL_COLS do list[#list + 1] = BLANK end
+		for _, entry in ipairs(procs) do list[#list + 1] = entry end
+	end
+	while #list % SPELL_COLS ~= 0 do list[#list + 1] = BLANK end
+end
+
 local function SpellsPage(page)
 	local y = Section(page, TOP, "Your spells", true,
 		"Untick a spell to hide its numbers. Scroll for more.")
 	local cellW = (COL_W + 16) / SPELL_COLS
 	local cells, list, first = {}, {}, 1
 	local function fill()
-		local known = {}
-		Spellbook(known)
-		wipe(list)
-		for name, icon in pairs(known) do list[#list + 1] = { name, icon } end
-		table.sort(list, function(a, b) return a[1] < b[1] end)
+		SpellList(list)
 		local shown = SPELL_LINES * SPELL_COLS
 		first = math.max(1, math.min(first, #list - shown + 1))
 		for i, cell in ipairs(cells) do
 			local entry = list[first + i - 1]
-			if entry then
+			if entry == HEADING then
+				cell.spell = nil
+				cell.label:SetText("PROCS AND EFFECTS")
+				cell.label:SetTextColor(rgb(C.accentText))
+				cell.icon:Hide(); cell.box:Hide(); cell.tick:Hide()
+				cell:Show()
+			elseif entry and entry ~= BLANK then
 				cell.spell = entry[1]
 				cell.label:SetText(entry[1])
+				cell.label:SetTextColor(rgb(C.text))
 				cell.icon:SetTexture(type(entry[2]) == "string" and entry[2] or nil)
+				cell.icon:Show(); cell.box:Show()
 				if ns.db.hideSpells[entry[1]] then cell.tick:Hide() else cell.tick:Show() end
 				cell:Show()
 			else
@@ -503,8 +533,9 @@ local function SpellsPage(page)
 			cell.label:SetJustifyH("LEFT")
 			local box, tick = ns.CheckBox(cell, 20)
 			box:SetPoint("RIGHT", -8, 0)
-			cell.tick = tick
+			cell.box, cell.tick = box, tick
 			cell:SetScript("OnClick", function(self)
+				if not self.spell then return end
 				local hide = ns.db.hideSpells
 				hide[self.spell] = not hide[self.spell] or nil
 				fill()

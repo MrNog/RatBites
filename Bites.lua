@@ -31,6 +31,13 @@ local COLOR = {
 	buff = { 1, 0.9, 0.55 },
 	taken = { 0.88, 0.32, 0.27 },
 	takenCrit = { 1, 0.22, 0.45, thick = true },
+	-- mana, rage, energy and runic power you gain, by the game's power type number
+	power = {
+		[0] = { 0.4, 0.62, 1 },
+		[1] = { 1, 0.35, 0.3 },
+		[3] = { 1, 0.9, 0.35 },
+		[6] = { 0.35, 0.85, 1 },
+	},
 }
 ns.COLOR = COLOR
 
@@ -520,6 +527,7 @@ local ITEM_ICONS = { [64413] = 46017 }
 -- hangs on talents and glyphs the log can't see, so it stays a word.
 local HEAL_SHARE = { [64413] = 0.15, [47753] = 0.30 }
 local SACRED_SHIELD = 58597
+local SEEN_KINDS = { swing = true, spell = true, dot = true, heal = true, overheal = true, shield = true }
 local lastHeal = {}  -- GUID -> { amount, crit, at } of your last heal on them
 -- only the heals of the fight matter: a raid night would otherwise keep one for everyone you healed
 ns.On("PLAYER_REGEN_ENABLED", function() wipe(lastHeal) end)
@@ -571,6 +579,10 @@ local function Read(event, ...)
 		if auraType == "BUFF" and event == "SPELL_AURA_APPLIED" and MARKS[spellName] then
 			return "buff", nil, nil, SpellIcon(id), MARKS[spellName]
 		end
+	elseif event == "SPELL_ENERGIZE" or event == "SPELL_PERIODIC_ENERGIZE" then
+		-- mana, rage, energy or runic power gained; the power type rides where a miss's word does
+		local id, _, _, amount, powerType = ...
+		return "power", amount, nil, SpellIcon(id), powerType
 	elseif event == "SWING_MISSED" then
 		local missType = ...
 		return "miss", nil, nil, ATTACK_ICON, missType
@@ -653,7 +665,7 @@ end
 local function Route(row, plate, name, label, color, size, icon, pop, amount, sign)
 	local db = ns.db
 	local r = db.route[row]
-	local anim = (row == "heal" or row == "healMe") and db.healAnimation or db.animation
+	local anim = (row == "heal" or row == "healMe" or row == "powerMe") and db.healAnimation or db.animation
 	if r.plate and plate then
 		Show(plate, name, 0, 0, label, color, size, icon, pop, false, anim)
 	elseif r.plate and not r.mine and db.noPlateToBox then
@@ -702,10 +714,15 @@ local function Received(kind, amount, crit, icon, word)
 	if kind == "miss" then return end
 	if (kind == "overheal" or kind == "shield") and not Wanted("player", kind) then return end
 	local heal = HEALING[kind]
-	local row = heal and "healMe" or "dmgMe"
+	local row = kind == "power" and "powerMe" or heal and "healMe" or "dmgMe"
 	if not Ticked(ns.db.route[row]) then return end
 	local label, color
-	if kind == "shield" then
+	if kind == "power" then
+		if not amount or amount <= 0 then return end
+		Route(row, nil, nil, "+" .. Abbrev(amount), COLOR.power[word] or COLOR.power[0], SIZE * 0.9, icon, false,
+			amount, "+")
+		return
+	elseif kind == "shield" then
 		label, color = amount and "+" .. Abbrev(amount) or "Shield", COLOR.shield
 	elseif kind == "buff" then
 		label, color = word, COLOR.buff
@@ -742,7 +759,8 @@ local function Trace(event, destGUID, destName, kind, amount, id, spellName)
 end
 
 local function TraceLine(e)
-	local row = e.kind and (e.onMe and (HEALING[e.kind] and "healMe" or "dmgMe") or (HEALING[e.kind] and "heal" or "dmg"))
+	local row = e.kind and (e.onMe and (e.kind == "power" and "powerMe" or HEALING[e.kind] and "healMe" or "dmgMe")
+		or (HEALING[e.kind] and "heal" or "dmg"))
 	local r = row and ns.db.route[row]
 	local places = {}
 	if r then
@@ -792,6 +810,11 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	if who then
 		local spell = event:find("^SWING") and MELEE or select(2, ...)
 		if type(spell) == "string" and db.hideSpells[spell] then return end
+		-- every spell of yours or your pet's that makes a number is kept, so procs and effects outside
+		-- the spellbook (Judgement heals, glyph splashes, Beacon copies) can be unticked too
+		if amount and SEEN_KINDS[kind] and type(spell) == "string" and not ns.char.seen[spell] then
+			ns.char.seen[spell] = icon or true
+		end
 	end
 	if kind == "shield" then
 		amount = ShieldSize((...), destGUID)
@@ -918,6 +941,7 @@ local function LegendEntries()
 		{ "Shield", COLOR.shield, "+177", 0.85 },
 		{ "Damage taken", COLOR.taken, "-640", 0.9 },
 		{ "Damage taken crit", COLOR.takenCrit, "-2.1k", 1.2 },
+		{ "Mana gained", COLOR.power[0], "+1.2k", 0.9 },
 	}
 end
 

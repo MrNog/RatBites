@@ -3,7 +3,8 @@ local ADDON, ns = ...
 -- One profile's settings. ns.db is the active profile.
 -- route: the two Where grids. What you do: rows dmg (your damage) and heal (your heals on others), each
 -- ticking plate (over their nameplate), me (over your character) and mine (Output box). What lands on
--- you: rows healMe and dmgMe, each ticking me and recv (Input box).
+-- you: rows healMe, dmgMe and powerMe (mana, rage, energy, runic power), each ticking me and recv
+-- (Input box).
 -- noPlateToBox: a number wanted over a nameplate that isn't on screen goes to My box instead
 -- joinShields: a shield your heal makes (Val'anyr, Divine Aegis) joins that heal's number
 -- animation, healAnimation: how damage and heals move, on plates and over you: "arc", "rise" or "stay"
@@ -16,6 +17,7 @@ ns.DEFAULTS = {
 		heal = { plate = true, me = false, mine = false },
 		healMe = { me = false, recv = true },
 		dmgMe = { me = false, recv = true },
+		powerMe = { me = false, recv = false },
 	},
 	noPlateToBox = true,
 	joinShields = true,
@@ -463,7 +465,7 @@ ns.On("ADDON_LOADED", function(name)
 		end
 		char.dual, char.spec = nil, nil
 	end
-	copyDefaults({ profile = "Default" }, char)
+	copyDefaults({ profile = "Default", seen = {} }, char)
 	ns.db = Profile(ns.ActiveProfile())
 end)
 
