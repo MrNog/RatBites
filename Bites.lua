@@ -287,8 +287,9 @@ end
 -- The characters are textures of the number's own frame, like its icon: an animation moves and
 -- fades a frame's own textures, not frames inside it.
 
--- the characters laid out at size want (the pop redraws them as it shrinks), the icon and number
--- centred together on the frame
+-- the characters laid out at size want (the pop redraws them as it shrinks): the icon and number
+-- centred together on the frame, or by the Align setting starting just after the icon's column
+-- (left) or ending at the same spot (right)
 local function PlaceDigits(t, want)
 	local set, k = t.glyphSet, want / t.glyphSet.size
 	local cell, pen = ns.CRIT_CELL * k, 0
@@ -299,14 +300,21 @@ local function PlaceDigits(t, want)
 	local first = set[t.glyphLabel:sub(1, 1)]
 	local left = first[6] * k
 	local width = (pen + last[6] + last[5]) * k - left
-	local shift = t.icon:IsShown() and (t.icon:GetWidth() + 4) / 2 or 0
+	local x0
+	if t.align == "left" then
+		x0 = -t.alignAt + (t.icon:IsShown() and t.icon:GetWidth() + 4 or 0)
+	elseif t.align == "right" then
+		x0 = t.alignAt - width
+	else
+		x0 = -width / 2 + (t.icon:IsShown() and (t.icon:GetWidth() + 4) / 2 or 0)
+	end
 	pen = 0
 	for i = 1, n do
 		local g = set[t.glyphLabel:sub(i, i)]
 		local tex = t.glyphs[i]
 		tex:SetWidth(g[5] * k); tex:SetHeight(cell)
 		tex:ClearAllPoints()
-		tex:SetPoint("LEFT", t, "CENTER", (pen + g[6]) * k - left - width / 2 + shift, 0)
+		tex:SetPoint("LEFT", t, "CENTER", (pen + g[6]) * k - left + x0, 0)
 		pen = pen + g[7] + CRIT_TRACK
 	end
 end
@@ -400,17 +408,41 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, an
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
 	t.useDigits = color.thick and want > SHARP_MAX and DrawDigits(t, label, want, color)
-	-- a joined shield may have moved the text beside a crit's images: back on the centre
+	-- Align: centre puts the number on the spot; left starts every icon at the same spot left of it,
+	-- so the icons of a stack stand in one column and the numbers start after them; right ends every
+	-- number at the same spot right of it. (A joined shield may have moved the text beside a crit's
+	-- images: it is placed again here.)
+	local iconOn = icon and db.icons
+	local at = SIZE * db.scale
+	t.align, t.alignAt = db.align, at
 	t.text:ClearAllPoints()
-	t.text:SetPoint("CENTER")
 	t.icon:ClearAllPoints()
 	if t.useDigits then
 		t.text:Hide()
-		t.icon:SetPoint("RIGHT", t.glyphs[1], "LEFT", -4, 0)
+		t.text:SetPoint("CENTER")
+		if t.align == "left" then
+			t.icon:SetPoint("LEFT", t, "CENTER", -at, 0)
+		else
+			t.icon:SetPoint("RIGHT", t.glyphs[1], "LEFT", -4, 0)
+		end
 	else
 		HideDigits(t)
 		t.text:Show()
-		t.icon:SetPoint("RIGHT", t.text, "LEFT", -4, 0)
+		if t.align == "left" then
+			if iconOn then
+				t.icon:SetPoint("LEFT", t, "CENTER", -at, 0)
+				t.text:SetPoint("LEFT", t.icon, "RIGHT", 4, 0)
+			else
+				t.text:SetPoint("LEFT", t, "CENTER", -at, 0)
+			end
+		else
+			if t.align == "right" then
+				t.text:SetPoint("RIGHT", t, "CENTER", at, 0)
+			else
+				t.text:SetPoint("CENTER")
+			end
+			t.icon:SetPoint("RIGHT", t.text, "LEFT", -4, 0)
+		end
 	end
 	-- an icon has a normal hit's size; a crit's grows with its number, to half its height
 	local iconSize = SIZE * db.scale

@@ -299,6 +299,8 @@ local function LookPage(page)
 	local y = Section(page, TOP, "Text", true)
 	y = Choice(page, y, "Font", ns.FontList(), flag("font"))
 	y = Stepper(page, y, "Size", 0.5, 2, 0.1, Percent, flag("scale"))
+	y = Choice(page, y, "Align", { { "center", "Center" }, { "left", "Left" }, { "right", "Right" } },
+		flag("align"))
 	y = Check(page, y, "Short numbers (12.4k)", either("short", "full", flag("numbers")))
 	y = Check(page, y, "Spell icons", flag("icons"))
 	y = Check(page, y, "Class color on my hits", either("normal", "off", flag("classColorFor")))

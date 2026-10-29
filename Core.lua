@@ -35,6 +35,7 @@ ns.DEFAULTS = {
 			time = 5 },
 	},
 	scale = 1,
+	align = "center",  -- floating numbers: "center", "left" (icons in one column) or "right"
 	font = "lsm:Blender Pro",
 	icons = true,
 	hideSpells = {},   -- spell name -> true: the ones you unticked there
