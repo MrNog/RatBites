@@ -8,7 +8,7 @@ local ADDON, ns = ...
 local LINE_GAP = 4
 local FADE = 0.5   -- a line fades over its last half second
 local EDGE_PAD = 8  -- left- or right-aligned lines keep this far from the box's side
-local NAMES = { mine = "My box", received = "Received box" }
+local NAMES = { mine = "Output box", received = "Input box" }
 
 local boxes = {}
 local unlocked = false

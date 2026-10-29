@@ -34,7 +34,7 @@ ns.DEFAULTS = {
 	font = "lsm:Blender Pro",
 	icons = true,
 	hideSpells = {},   -- spell name -> true: the ones you unticked there
-	classColorFor = "off",  -- "normal" = your normal damage, "crit" = your crits; the other keeps its colour
+	classColorFor = "off",  -- "normal" = your normal damage in your class colour
 	bigGold = true,
 	critStyle = "pop",
 	critSize = 5,  -- a crit (Pop or Bigger) against a normal hit

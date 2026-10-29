@@ -275,11 +275,11 @@ local function WherePage(page)
 	local y = Section(page, TOP, "Where each number goes", true,
 		"Tick every place you want it. Any mix works; nothing ticked hides it.")
 	y = Grid(page, y,
-		{ { "plate", "Over their nameplate" }, { "me", "Over me" }, { "mine", "My box" }, { "recv", "Received box" } },
+		{ { "plate", "Over their nameplate" }, { "me", "Over me" }, { "mine", "Output box" }, { "recv", "Input box" } },
 		{ { "dmg", "My damage (on enemies)" }, { "heal", "My heals (on others)" },
 			{ "healMe", "Heals on me (self-heals too)" }, { "dmgMe", "Damage on me" } })
 	y = Section(page, y, "No nameplate", nil, "Pets, totems and far-away players have no nameplate.")
-	y = Check(page, y, "Put it in My box instead", flag("noPlateToBox"))
+	y = Check(page, y, "Put it in the Output box instead", flag("noPlateToBox"))
 	return y
 end
 
@@ -313,7 +313,7 @@ local function BoxesPage(page)
 		function() ns.SetBoxesUnlocked(not ns.BoxesUnlocked()) end,
 		function() return ns.BoxesUnlocked() and "Lock" or "Unlock" end)
 	-- the same four rows for each box, on its own settings
-	for _, def in ipairs({ { "mine", "My box: what you do" }, { "received", "Received box: what lands on you" } }) do
+	for _, def in ipairs({ { "mine", "Output box: what you do" }, { "received", "Input box: what lands on you" } }) do
 		y = Section(page, y, def[2])
 		y = Choice(page, y, "New lines come in at",
 			{ { "up", "The bottom" }, { "down", "The top" } },
