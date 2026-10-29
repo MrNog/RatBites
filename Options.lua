@@ -365,10 +365,9 @@ local function Confirm(question, yes, onYes)
 	confirm:Show()
 end
 
--- Your spells in a grid two wide that scrolls with the mouse wheel: the spellbook spells that make
--- numbers (class tabs only, no passives), plus the hidden effects RatBites has
--- seen from you (Judgement of Light heals, glyph splashes, beacon copies). A tick shows a spell,
--- untick it to hide it. The grid is read again each time the window refreshes.
+-- Your spells in a grid two wide that scrolls with the mouse wheel: only the spellbook spells that
+-- make numbers (no passives), with Auto Attack as Melee. A tick shows a spell, untick it to hide
+-- it. The grid is read again each time the window refreshes.
 local SPELL_LINES, SPELL_COLS = 12, 2
 
 -- Only spells that make numbers: their tooltip gives an amount of damage ("1,200 Holy damage"),
@@ -411,11 +410,15 @@ local function MakesNumbers(i, name)
 end
 
 local function Spellbook(into)
-	for tab = 2, GetNumSpellTabs() do
+	local autoAttack = GetSpellInfo(6603)
+	for tab = 1, GetNumSpellTabs() do
 		local _, _, offset, count = GetSpellTabInfo(tab)
 		for i = offset + 1, offset + count do
 			local name = GetSpellName(i, BOOKTYPE_SPELL)
-			if name and not IsPassiveSpell(i, BOOKTYPE_SPELL) and not into[name] and MakesNumbers(i, name) then
+			if name == autoAttack then
+				-- swings come in the combat log under the game's word for melee
+				into[MELEE] = GetSpellTexture(i, BOOKTYPE_SPELL) or true
+			elseif name and not IsPassiveSpell(i, BOOKTYPE_SPELL) and not into[name] and MakesNumbers(i, name) then
 				into[name] = GetSpellTexture(i, BOOKTYPE_SPELL) or true
 			end
 		end
@@ -430,9 +433,6 @@ local function SpellsPage(page)
 	local function fill()
 		local known = {}
 		Spellbook(known)
-		for name, icon in pairs(ns.db.seen) do
-			if not known[name] or known[name] == true then known[name] = icon end
-		end
 		wipe(list)
 		for name, icon in pairs(known) do list[#list + 1] = { name, icon } end
 		table.sort(list, function(a, b) return a[1] < b[1] end)

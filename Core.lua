@@ -33,7 +33,6 @@ ns.DEFAULTS = {
 	iconScale = 1,  -- an icon's size against its number's text
 	font = "friz",
 	icons = true,
-	seen = {},         -- spell name -> icon: your spells RatBites has shown, for the Spells tab
 	hideSpells = {},   -- spell name -> true: the ones you unticked there
 	classColorFor = "off",  -- "normal" = your normal damage, "crit" = your crits; the other keeps its colour
 	bigGold = true,
@@ -171,11 +170,8 @@ end
 -- crits keep standing out).
 local function Upgrade(db)
 	UpgradeRoute(db)
-	-- spells once listed from misses (interrupts, immunes) are cleared, once; real ones come back
-	if not db.seenClean then
-		db.seen = {}
-		db.seenClean = true
-	end
+	-- the Spells tab lists the spellbook only: spells once collected from the combat log go
+	db.seen, db.seenClean = nil, nil
 	-- crits went from 2.7x to 5x by default: a profile still on the old default follows, once
 	if not db.critSizeSet then
 		if db.critSize == 2.7 then db.critSize = 5 end
