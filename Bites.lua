@@ -155,11 +155,12 @@ end
 -- Each number moves by WoW's own animation system, so the engine moves it smoothly between frames:
 -- its spot is set once, then animations slide it. Sideways moves at a steady pace while the rise
 -- eases out, which together make the arc; the fade is an animation too.
--- The client turns down a font size that is too big (the text then keeps its old, small font), so a
--- number bigger than FONT_MAX (a big crit) is drawn at FONT_MAX and its frame scaled up the rest;
--- the frame's offsets are scaled with it, so they are divided back.
+-- The client turns down a font size that is too big (the text then keeps its old, small font) and
+-- won't draw text bigger by scaling its frame either, so a number bigger than FONT_MAX (a big crit)
+-- takes its font at FONT_MAX and is stretched to its size with SetTextHeight, as Blizzard's own
+-- combat text grows its crits.
 -- A popping crit lands like a bomb: it appears BOMB times bigger and shrinks smoothly back over
--- BOMB_TIME, sized by hand for that moment (its spot kept), and only then does its path start.
+-- BOMB_TIME, sized by hand for that moment, and only then does its path start.
 local START_GAP = 12  -- how far above the plate a number starts
 local FONT_MAX = 32
 local BOMB, BOMB_TIME = 2.5, 0.25
@@ -215,32 +216,24 @@ local function Leg(a, x, y, duration, smoothing, delay)
 	a:SetStartDelay(delay or 0)
 end
 
--- the frame at scale k with its spot kept (a frame's point offsets are in its own scaled units)
-local function Place(t, k)
-	t:SetScale(k)
-	t:ClearAllPoints()
-	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.px / k, t.py / k)
-end
-
 local function Bombing(group, elapsed)
 	local t = group.owner
 	t.bombed = t.bombed + elapsed
 	local f = 1 - t.bombed / BOMB_TIME
 	if f <= 0 then
-		Place(t, t.frameScale)
+		t.text:SetTextHeight(t.want)
 		group:SetScript("OnUpdate", nil)
 		return
 	end
-	Place(t, t.frameScale * (1 + (BOMB - 1) * f * f))
+	t.text:SetTextHeight(t.want * (1 + (BOMB - 1) * f * f))
 end
 
--- Sets the number's path (h is the Height setting, dx its sideways drift), in its frame's units,
--- after a popping crit's bomb:
+-- Sets the number's path (h is the Height setting, dx its sideways drift), after a popping crit's
+-- bomb:
 --   arc: drifts sideways while the rise eases out   rise: straight up   stay: holds, only fades
 --   fountain: up, then back down past its start   fall: starts h above and drifts down to it
 local function Plan(t, pop)
-	local k = t.frameScale
-	local d, h, dx = t.duration, t.rise / k, t.dx / k
+	local d, h, dx = t.duration, t.rise, t.dx
 	local wait = pop and BOMB_TIME or 0
 	local fadeAt, fadeLen = d * FADE_AT, d * (1 - FADE_AT)
 	if t.anim == "fountain" then
@@ -280,28 +273,21 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t:SetAlpha(1)
 	-- a crit draws above every other number, so it shows through a pile of heals
 	t:SetFrameLevel(root:GetFrameLevel() + (color.thick and 20 or 1))
-	-- the size it should show at (Text size included), drawn at up to FONT_MAX and scaled the rest;
-	-- every icon has one size (a normal hit's), so crits grow only their text
+	-- the size it should show at (Text size included): its font at up to FONT_MAX, stretched the rest
 	local want = size * db.scale
 	local fontPx = math.min(FONT_MAX, math.floor(want + 0.5))
-	t.frameScale = want / fontPx
-	t:SetScale(t.frameScale)
+	t.want = want
 	-- a new font string takes no text before it has a font
-	-- A scaled-up number scales its outline and shadow too: past the font limit the thick outline
-	-- turns into a fat black edge, so it takes the thin one, and the shadow keeps one screen pixel.
-	local thick = color.thick and t.frameScale < 1.2
+	-- A stretched number stretches its outline too: past the font limit the thick outline turns into
+	-- a fat black edge, so it takes the thin one.
+	local thick = color.thick and want / fontPx < 1.2
 	t.text:SetFont(ns.FontPath(), fontPx, thick and "THICKOUTLINE" or "OUTLINE")
-	t.text:SetShadowOffset(1 / t.frameScale, -1 / t.frameScale)
+	t.text:SetTextHeight(want)
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
-	-- every icon has one size (a normal hit's), crits too: only their text grows. The black edge
-	-- around it stays one screen pixel however much the frame is scaled.
-	local iconSize = SIZE * db.scale * db.iconScale / t.frameScale
+	-- every icon has one size (a normal hit's), crits too: only their text grows
+	local iconSize = SIZE * db.scale * db.iconScale
 	t.icon:SetWidth(iconSize); t.icon:SetHeight(iconSize)
-	local edge = 1 / t.frameScale
-	t.edge:ClearAllPoints()
-	t.edge:SetPoint("TOPLEFT", t.icon, "TOPLEFT", -edge, edge)
-	t.edge:SetPoint("BOTTOMRIGHT", t.icon, "BOTTOMRIGHT", edge, -edge)
 	if icon and db.icons then
 		t.icon:SetTexture(icon)
 		t.icon:Show(); t.edge:Show()
@@ -335,13 +321,13 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	-- a crit starts a normal line above the rest, so at its size it doesn't cover hits landing with it
 	if color.thick then startY = startY + (SIZE + 6) * db.scale end
 	if t.anim == "fall" then startY = startY + t.rise end
-	t.px, t.py = math.floor(t.x + 0.5), math.floor(startY + 0.5)
+	t:ClearAllPoints()
+	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", math.floor(t.x + 0.5), math.floor(startY + 0.5))
 	if pop then
 		t.bombed = 0
-		Place(t, t.frameScale * BOMB)
+		t.text:SetTextHeight(want * BOMB)
 		t.group:SetScript("OnUpdate", Bombing)
 	else
-		Place(t, t.frameScale)
 		t.group:SetScript("OnUpdate", nil)
 	end
 	Plan(t, pop)
