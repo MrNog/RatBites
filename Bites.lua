@@ -768,9 +768,15 @@ local function TraceLine(e)
 			if r[key] then places[#places + 1] = key end
 		end
 	end
+	-- a setting that stops it before it gets anywhere
+	local show = ns.db.show
+	local stop = (e.kind == "overheal" and not show.overheal and "Overheal is unticked")
+		or (e.kind == "shield" and not show.shield and "Shields are off")
+		or (ns.db.hideSpells[e.spell] and "unticked in Spells")
 	return format("%s %s -> %s: %s %s%s", date("%H:%M:%S", e.time), e.event, e.onMe and "you" or tostring(e.dest),
 		e.spell, e.kind and (e.kind .. " " .. tostring(e.amount or "")) or "not shown",
-		r and (" [" .. (#places > 0 and table.concat(places, " ") or "nowhere") .. "]") or "")
+		stop and (" [hidden: " .. stop .. "]")
+		or r and (" [" .. (#places > 0 and table.concat(places, " ") or "nowhere") .. "]") or "")
 end
 
 function ns.PrintTrace()
