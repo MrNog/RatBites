@@ -231,9 +231,7 @@ local function Acquire()
 	t.edge:SetVertexColor(0, 0, 0)
 	t.icon = t:CreateTexture(nil, "OVERLAY")
 	t.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-	t.digits = CreateFrame("Frame", nil, t)
-	t.digits:SetPoint("CENTER")
-	t.digits.tex = {}
+	t.glyphs = {}
 	t.edge:SetPoint("TOPLEFT", t.icon, "TOPLEFT", -1, 1)
 	t.edge:SetPoint("BOTTOMRIGHT", t.icon, "BOTTOMRIGHT", 1, -1)
 	-- order 1 is the whole path for most animations; Fountain goes up in order 1, down in order 2
@@ -276,6 +274,31 @@ local function CritImages()
 	return name:find("pokemon") and "pokemon" or "blender"
 end
 
+-- The characters are textures of the number's own frame, like its icon: an animation moves and
+-- fades a frame's own textures, not frames inside it.
+
+-- the characters laid out centred on the frame at size want (the pop redraws them as it shrinks)
+local function PlaceDigits(t, want)
+	local set, k = t.glyphSet, want / t.glyphSet.size
+	local cell, pen = ns.CRIT_CELL * k, 0
+	-- the whole number's width first, so it can be centred
+	local n = #t.glyphLabel
+	for i = 1, n - 1 do pen = pen + set[t.glyphLabel:sub(i, i)][7] + CRIT_TRACK end
+	local last = set[t.glyphLabel:sub(n, n)]
+	local first = set[t.glyphLabel:sub(1, 1)]
+	local left = first[6] * k
+	local width = (pen + last[6] + last[5]) * k - left
+	pen = 0
+	for i = 1, n do
+		local g = set[t.glyphLabel:sub(i, i)]
+		local tex = t.glyphs[i]
+		tex:SetWidth(g[5] * k); tex:SetHeight(cell)
+		tex:ClearAllPoints()
+		tex:SetPoint("LEFT", t, "CENTER", (pen + g[6]) * k - left - width / 2, 0)
+		pen = pen + g[7] + CRIT_TRACK
+	end
+end
+
 -- the label as images at size want; false when it has a character there is no image of
 local function DrawDigits(t, label, want, color)
 	local key = CritImages()
@@ -285,28 +308,26 @@ local function DrawDigits(t, label, want, color)
 	for i = 1, #label do
 		if not set[label:sub(i, i)] then return false end
 	end
-	local d, k = t.digits, want / set.size
-	local cell, pen, right = ns.CRIT_CELL * k, 0, 0
+	t.glyphSet, t.glyphLabel = set, label
 	for i = 1, #label do
 		local g = set[label:sub(i, i)]
-		local tex = d.tex[i]
+		local tex = t.glyphs[i]
 		if not tex then
-			tex = d:CreateTexture(nil, "OVERLAY")
-			d.tex[i] = tex
+			tex = t:CreateTexture(nil, "OVERLAY")
+			t.glyphs[i] = tex
 		end
 		tex:SetTexture([[Interface\AddOns\RatBites\Media\Crit\]] .. key)
 		tex:SetTexCoord(g[1], g[2], g[3], g[4])
 		tex:SetVertexColor(color[1], color[2], color[3])
-		tex:SetWidth(g[5] * k); tex:SetHeight(cell)
-		tex:ClearAllPoints()
-		tex:SetPoint("LEFT", d, "LEFT", (pen + g[6]) * k, 0)
 		tex:Show()
-		right = (pen + g[6] + g[5]) * k
-		pen = pen + g[7] + CRIT_TRACK
 	end
-	for i = #label + 1, #d.tex do d.tex[i]:Hide() end
-	d:SetWidth(math.max(1, right)); d:SetHeight(cell)
+	for i = #label + 1, #t.glyphs do t.glyphs[i]:Hide() end
+	PlaceDigits(t, want)
 	return true
+end
+
+local function HideDigits(t)
+	for i = 1, #t.glyphs do t.glyphs[i]:Hide() end
 end
 
 local function Bombing(group, elapsed)
@@ -315,12 +336,12 @@ local function Bombing(group, elapsed)
 	local f = 1 - t.bombed / BOMB_TIME
 	if f <= 0 then
 		-- landed: drawn again at its own size, so it is sharp rather than resampled
-		if t.useDigits then t.digits:SetScale(1) else SetSize(t) end
+		if t.useDigits then PlaceDigits(t, t.want) else SetSize(t) end
 		group:SetScript("OnUpdate", nil)
 		return
 	end
 	local grow = 1 + (BOMB - 1) * f * f
-	if t.useDigits then t.digits:SetScale(grow) else t.text:SetTextHeight(t.want * grow) end
+	if t.useDigits then PlaceDigits(t, t.want * grow) else t.text:SetTextHeight(t.want * grow) end
 end
 
 -- Sets the number's path (h is the Height setting, dx its sideways drift), after a popping crit's
@@ -380,13 +401,13 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
 	t.useDigits = color.thick and want > SHARP_MAX and DrawDigits(t, label, want, color)
-	t.digits:SetScale(1)
 	t.icon:ClearAllPoints()
 	if t.useDigits then
-		t.text:Hide(); t.digits:Show()
-		t.icon:SetPoint("RIGHT", t.digits, "LEFT", -4, 0)
+		t.text:Hide()
+		t.icon:SetPoint("RIGHT", t.glyphs[1], "LEFT", -4, 0)
 	else
-		t.digits:Hide(); t.text:Show()
+		HideDigits(t)
+		t.text:Show()
 		t.icon:SetPoint("RIGHT", t.text, "LEFT", -4, 0)
 	end
 	-- an icon has a normal hit's size; a crit's grows with its number, to half its height
@@ -433,7 +454,7 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 		-- the bomb is drawn at its biggest size and shrunk: shrinking keeps text sharp, growing blurs it
 		local big = want * BOMB
 		if t.useDigits then
-			t.digits:SetScale(BOMB)
+			PlaceDigits(t, big)
 		else
 			t.text:SetFont(ns.FontPath(), math.min(FontMax(ns.FontPath()), math.floor(big + 0.5)), "OUTLINE")
 			t.text:SetTextHeight(big)
