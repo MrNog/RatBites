@@ -13,7 +13,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 CHARS = "0123456789.,km+-"
-W, H = 1024, 256          # two rows of cells
+W, H = 512, 512           # square (the client loads square custom textures), four rows of cells
 CELL_H = 128
 PAD = 4
 STROKE = 7
