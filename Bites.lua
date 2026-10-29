@@ -694,20 +694,25 @@ local function ToBox(key, label, color, size, icon, pop, amount, sign)
 	if x then Show(nil, nil, x, y, label, color, scaled, icon, pop, style ~= "arc", style) end
 end
 
+-- the Spells page's two ticks for the spell being shown, set for each combat-log line: skipFloat keeps
+-- it off plates and over you, skipBox out of the boxes
+local skipFloat, skipBox = false, false
+
 local function Route(row, plate, name, label, color, size, icon, pop, amount, sign)
 	local db = ns.db
 	local r = db.route[row]
 	local anim = (row == "heal" or row == "healMe" or row == "powerMe") and db.healAnimation or db.animation
-	if r.plate and plate then
+	if r.plate and plate and not skipFloat then
 		Show(plate, name, 0, 0, label, color, size, icon, pop, false, anim)
-	elseif r.plate and not r.mine and db.noPlateToBox then
+	elseif r.plate and not skipFloat and not skipBox and not r.mine and db.noPlateToBox then
 		-- wanted over a nameplate that isn't on screen (pets, totems, far away): My box instead
 		ToBox("mine", label, color, size, icon, pop, amount, sign)
 	end
-	if r.me then
+	if r.me and not skipFloat then
 		local x, y = MeSpot()
 		Show(nil, nil, x, y, label, color, size, icon, pop, true, anim)
 	end
+	if skipBox then return end
 	if r.mine then ToBox("mine", label, color, size, icon, pop, amount, sign) end
 	if r.recv then ToBox("received", label, color, size, icon, pop, amount, sign) end
 end
@@ -804,7 +809,7 @@ local function TraceLine(e)
 	local show = ns.db.show
 	local stop = (e.kind == "overheal" and not show.overheal and "Overheal is unticked")
 		or (e.kind == "shield" and not show.shield and "Shields are off")
-		or (ns.db.hideSpells[e.spell] and "unticked in Spells")
+		or (ns.db.noPlates[e.spell] and ns.db.noBoxes[e.spell] and "unticked in Spells")
 	return format("%s %s -> %s: %s %s%s", date("%H:%M:%S", e.time), e.event, e.onMe and "you" or tostring(e.dest),
 		e.spell, e.kind and (e.kind .. " " .. tostring(e.amount or "")) or "not shown",
 		stop and (" [hidden: " .. stop .. "]")
@@ -823,6 +828,7 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	local db = ns.db
 	if not db or not ns.app.enabled or not ns.playerGUID then return end
 	local who = Who(sourceGUID, sourceFlags)
+	skipFloat, skipBox = false, false
 	local toMe = destGUID == ns.playerGUID
 	if not who and not toMe then return end
 	if who and (event == "SPELL_HEAL" or event == "SPELL_PERIODIC_HEAL") then
@@ -847,7 +853,11 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	-- by the game's word for melee
 	if who then
 		local spell = event:find("^SWING") and MELEE or select(2, ...)
-		if type(spell) == "string" and db.hideSpells[spell] then return end
+		skipFloat, skipBox = false, false
+		if type(spell) == "string" then
+			skipFloat, skipBox = db.noPlates[spell] or false, db.noBoxes[spell] or false
+			if skipFloat and skipBox then return end
+		end
 		-- every spell of yours or your pet's that makes a number is kept, so procs and effects outside
 		-- the spellbook (Judgement heals, glyph splashes, Beacon copies) can be unticked too
 		if amount and SEEN_KINDS[kind] and type(spell) == "string" and not ns.char.seen[spell] then

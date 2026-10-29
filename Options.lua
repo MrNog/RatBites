@@ -500,8 +500,18 @@ end
 
 local function SpellsPage(page)
 	local y = Section(page, TOP, "Your spells", true,
-		"Untick a spell to hide its numbers. Scroll for more.")
+		"Where each spell shows: Plates (and over you), Boxes, or untick both to hide it.")
 	local cellW = (COL_W + 16) / SPELL_COLS
+	-- the two ticks' names over each column of spells
+	for col = 1, SPELL_COLS do
+		local right = MARGIN - 8 + col * cellW - 4
+		for _, def in ipairs({ { "Plates", 54 }, { "Boxes", 14 } }) do
+			local head = Text(page, 11, C.accentHi)
+			head:SetPoint("BOTTOM", page, "TOPLEFT", right - def[2], y - 12)
+			head:SetText(def[1])
+		end
+	end
+	y = y - 16
 	local cells, list, first = {}, {}, 1
 	local function fill()
 		SpellList(list)
@@ -513,15 +523,15 @@ local function SpellsPage(page)
 				cell.spell = nil
 				cell.label:SetText("PROCS AND EFFECTS")
 				cell.label:SetTextColor(rgb(C.accentText))
-				cell.icon:Hide(); cell.box:Hide(); cell.tick:Hide()
+				cell.icon:Hide(); cell.plates:Hide(); cell.boxes:Hide()
 				cell:Show()
 			elseif entry and entry ~= BLANK then
 				cell.spell = entry[1]
 				cell.label:SetText(entry[1])
 				cell.label:SetTextColor(rgb(C.text))
 				cell.icon:SetTexture(type(entry[2]) == "string" and entry[2] or nil)
-				cell.icon:Show(); cell.box:Show()
-				if ns.db.hideSpells[entry[1]] then cell.tick:Hide() else cell.tick:Show() end
+				cell.icon:Show(); cell.plates:Show(); cell.boxes:Show()
+				cell.plates:Paint(); cell.boxes:Paint()
 				cell:Show()
 			else
 				cell:Hide()
@@ -553,17 +563,28 @@ local function SpellsPage(page)
 			cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 			cell.label = Text(cell, 13)
 			cell.label:SetPoint("LEFT", 38, 0)
-			cell.label:SetPoint("RIGHT", -34, 0)
+			cell.label:SetPoint("RIGHT", -76, 0)
 			cell.label:SetJustifyH("LEFT")
-			local box, tick = ns.CheckBox(cell, 20)
-			box:SetPoint("RIGHT", -8, 0)
-			cell.box, cell.tick = box, tick
-			cell:SetScript("OnClick", function(self)
-				if not self.spell then return end
-				local hide = ns.db.hideSpells
-				hide[self.spell] = not hide[self.spell] or nil
-				fill()
-			end)
+			-- a tick for plates and one for boxes; ticked = shown there
+			local function Place(key, x)
+				local b = CreateFrame("Button", nil, cell)
+				b:SetWidth(28); b:SetHeight(28)
+				b:SetPoint("CENTER", cell, "RIGHT", -x, 0)
+				local box, tick = ns.CheckBox(b, 20)
+				box:SetPoint("CENTER")
+				function b:Paint()
+					if ns.db[key][cell.spell] then tick:Hide() else tick:Show() end
+				end
+				b:SetScript("OnClick", function()
+					local off = ns.db[key]
+					off[cell.spell] = not off[cell.spell] or nil
+					b:Paint()
+				end)
+				b:EnableMouseWheel(true)
+				b:SetScript("OnMouseWheel", scroll)
+				return b
+			end
+			cell.plates, cell.boxes = Place("noPlates", 54), Place("noBoxes", 14)
 			cell:EnableMouseWheel(true)
 			cell:SetScript("OnMouseWheel", scroll)
 			cells[#cells + 1] = cell

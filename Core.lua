@@ -38,7 +38,10 @@ ns.DEFAULTS = {
 	align = "center",  -- floating numbers: "center", "left" (icons in one column) or "right"
 	font = "lsm:Blender Pro",
 	icons = true,
-	hideSpells = {},   -- spell name -> true: the ones you unticked there
+	-- the Spells page, by spell name: true = not on plates and over you (noPlates) or not in the
+	-- boxes (noBoxes); both = hidden
+	noPlates = {},
+	noBoxes = {},
 	classColorFor = "off",  -- "normal" = your normal damage in your class colour
 	critStyle = "pop",
 	critSize = 5,  -- a crit (Pop or Bigger) against a normal hit
@@ -174,6 +177,11 @@ end
 -- crits keep standing out).
 local function Upgrade(db)
 	UpgradeRoute(db)
+	-- a spell unticked when the Spells page had one tick per spell stays hidden everywhere
+	if db.hideSpells then
+		for name in pairs(db.hideSpells) do db.noPlates[name], db.noBoxes[name] = true, true end
+		db.hideSpells = nil
+	end
 	-- the grids lost the places that meant the same as another: over the nameplate of what lands on
 	-- you is over you, and each side has its own box
 	local r = db.route
