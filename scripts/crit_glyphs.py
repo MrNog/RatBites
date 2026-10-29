@@ -1,11 +1,12 @@
 """Draw the characters a crit number uses into one texture per font, for big crits drawn as images.
 
-    python scripts/crit_glyphs.py <SharedMedia fonts folder>
+    python scripts/crit_glyphs.py <SharedMedia addon folder>
 
 Each character is white with a black outline baked in, so the game can tint it to the crit's colour
-(the black stays black). For every font in FONTS this writes Media/Crit/<file>.png, converts it to
-Media/Crit/<file>.blp through Okanvil's png2blp_dxt5.py, and writes CritGlyphs.lua with each
-character's spot in its texture, keyed by the font's name in the Font list.
+(the black stays black). For every font SharedMedia.lua registers this writes Media/Crit/<file>.png,
+converts it to Media/Crit/<file>.blp through Okanvil's png2blp_dxt5.py, and writes CritGlyphs.lua
+with each character's spot in its texture, keyed by the font's name in the Font list. A font
+missing one of the characters is left out (and so isn't offered in the Font list).
 
 DXT5 needs Pillow 11.2 or later: older ones silently write raw pixels under a DXT5 header, which
 the game draws as garbage. Each texture is checked for that.
@@ -16,31 +17,23 @@ import subprocess
 import sys
 
 import PIL
+from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFont
 
-# name in the Font list (LibSharedMedia) -> font file drawn for it. Blender Pro's crits are drawn
-# in its bold cut, which reads better that big.
-FONTS = [
-    ("Blender Pro", "BlenderProBold.ttf"),
-    ("Blender Pro Bold", "BlenderProBold.ttf"),
-    ("Blender Pro Heavy", "BlenderProHeavy.ttf"),
-    ("Pokemon Solid", "PokemonSolid.ttf"),
-    ("Expressway", "Expressway.ttf"),
-    ("Bazooka", "Bazooka.ttf"),
-    ("BigNoodleToo", "BigNoodleToo.ttf"),
-    ("Impact", "Impact.ttf"),
-    ("Oswald", "Oswald.ttf"),
-    ("FrancoisOne", "FrancoisOne.ttf"),
-    ("Gotham Ultra", "GothamUltra.ttf"),
-    ("Futura PT Bold", "FuturaPTBold.ttf"),
-    ("SF Wonder Comic", "SFWonderComic.ttf"),
-    ("Yellowjacket", "Yellowjacket.ttf"),
-    ("X360", "X360.ttf"),
-    ("Porky", "Porky.ttf"),
-    ("Steelfish Rg", "SteelfishRg.ttf"),
-    ("Diogenes", "Diogenes.ttf"),
-    ("Bavaria", "Bavaria.ttf"),
-]
+# Blender Pro's crits are drawn in its bold cut, which reads better that big
+DRAWN_AS = {"Blender Pro": "BlenderProBold.ttf"}
+
+
+def registered(addon):
+    # name in the Font list -> font file, as SharedMedia.lua registers them
+    text = open(os.path.join(addon, "SharedMedia.lua"), encoding="utf-8", errors="replace").read()
+    found = re.findall(r'LSM:Register\(MediaType_FONT,\s*"([^"]+)",\s*\[\[[^\]]*\\([^\\\]]+\.ttf)\]\]', text)
+    return [(name, DRAWN_AS.get(name, ttf)) for name, ttf in found]
+
+
+def has_chars(path):
+    cmap = TTFont(path, fontNumber=0).getBestCmap() or {}
+    return all(ord(c) in cmap for c in CHARS)
 
 CHARS = "0123456789.,km+-"
 W, H = 512, 512           # square (the client loads square custom textures), four rows of cells
@@ -52,9 +45,21 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BLP = os.path.join(ROOT, "..", "Okanvil", "scripts", "png2blp_dxt5.py")
 
 
+def rows_needed(font):
+    x, rows = 0, 1
+    for c in CHARS:
+        left, _, right, _ = font.getbbox(c, anchor="ls", stroke_width=STROKE)
+        w = right - left + 2 * PAD
+        if x + w > W:
+            x, rows = 0, rows + 1
+        x += w
+    return rows
+
+
 def fit(path):
     # The biggest size at which every character, outline included, fits a cell with the digits
-    # centred in it, so the number sits level with the icon beside it (the comma hangs below).
+    # centred in it, so the number sits level with the icon beside it (the comma hangs below), and
+    # all of them fit the texture.
     size = CELL_H
     while size > 10:
         font = ImageFont.truetype(path, size)
@@ -62,10 +67,10 @@ def fit(path):
         baseline = CELL_H / 2 - (min(box(c)[1] for c in "0123456789") + max(box(c)[3] for c in "0123456789")) / 2
         top = min(box(c)[1] for c in CHARS) + baseline
         bottom = max(box(c)[3] for c in CHARS) + baseline
-        if top >= PAD and bottom <= CELL_H - PAD:
+        if top >= PAD and bottom <= CELL_H - PAD and rows_needed(font) * CELL_H <= H:
             return font, round(baseline)
         size -= 2
-    sys.exit("font too tall")
+    return None, None
 
 
 def build(file, path):
@@ -105,15 +110,26 @@ def main():
         sys.exit(__doc__)
     if tuple(int(v) for v in PIL.__version__.split(".")[:2]) < (11, 2):
         sys.exit(f"Pillow {PIL.__version__} can't write DXT5: 11.2 or later is needed")
-    folder = sys.argv[1]
+    addon = sys.argv[1]
+    folder = os.path.join(addon, "Media", "Fonts")
     out = ["local ADDON, ns = ...", "",
            "-- Made by scripts/crit_glyphs.py: per font in the Font list, its texture in Media\\Crit, the size",
            "-- its characters were drawn at, and each character's cell (left, right, top, bottom as texture",
            "-- coordinates), its width and its pen offset and advance, in pixels of a %d-pixel-high cell." % CELL_H,
            "ns.CRIT_GLYPHS = {"]
-    for name, ttf in FONTS:
+    built, skipped = {}, []
+    for name, ttf in registered(addon):
+        path = os.path.join(folder, ttf)
         file = re.sub(r"[^A-Za-z0-9]", "", os.path.splitext(ttf)[0])
-        glyphs, size = build(file, os.path.join(folder, ttf))
+        if file not in built:
+            if not os.path.exists(path) or not has_chars(path) or fit(path)[0] is None:
+                built[file] = None
+            else:
+                built[file] = build(file, path)
+        if not built[file]:
+            skipped.append(name)
+            continue
+        glyphs, size = built[file]
         out.append('\t["%s"] = {' % name)
         out.append('\t\tfile = "%s",' % file)
         out.append('\t\tsize = %d,' % size)
@@ -124,6 +140,7 @@ def main():
     out += ["}", "ns.CRIT_CELL = %d" % CELL_H, ""]
     with open(os.path.join(ROOT, "CritGlyphs.lua"), "w", encoding="utf-8", newline="\r\n") as f:
         f.write("\n".join(out))
+    print(f"{len(built) - len([b for b in built.values() if not b])} textures; left out: {', '.join(skipped) or 'none'}")
 
 
 if __name__ == "__main__":
