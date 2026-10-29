@@ -222,6 +222,16 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 		last.text:SetText(LineText(last))
 		last.at = GetTime()
 		last:SetAlpha(1)
+		-- it starts its time again, so it moves up with the newest: lines stay newest to oldest and
+		-- the next to fade is always at the far end
+		for i, line in ipairs(box.lines) do
+			if line == last then
+				table.remove(box.lines, i)
+				break
+			end
+		end
+		table.insert(box.lines, 1, last)
+		Layout(box)
 		ns.lastShown = last
 		return last
 	end
