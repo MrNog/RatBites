@@ -278,6 +278,7 @@ local function MotionPage(page)
 		flag("spread"))
 	y = Stepper(page, y, "Travel distance", 20, 150, 10, function(v) return format("%d", v) end, flag("height"))
 	y = Stepper(page, y, "Time on screen", 0.8, 4, 0.1, function(v) return format("%.1fs", v) end, flag("duration"))
+	y = Check(page, y, "Follow the plate", flag("follow"))
 	return y
 end
 

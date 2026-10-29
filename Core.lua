@@ -20,6 +20,7 @@ ns.DEFAULTS = {
 	noPlateToBox = true,
 	joinShields = true,
 	animation = "arc",
+	follow = false,    -- numbers over a plate keep up with it as the camera turns
 	height = 70,
 	duration = 1.5,
 	-- each box: its spot and size, where new lines come in ("up" = at the bottom), text alignment,

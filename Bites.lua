@@ -428,8 +428,12 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	-- a crit starts a normal line above the rest, so at its size it doesn't cover hits landing with it
 	if color.thick then startY = startY + (SIZE + 6) * db.scale end
 	if t.anim == "fall" then startY = startY + t.rise end
+	t.sx, t.sy = math.floor(t.x + 0.5), math.floor(startY + 0.5)
 	t:ClearAllPoints()
-	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", math.floor(t.x + 0.5), math.floor(startY + 0.5))
+	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.sx, t.sy)
+	-- "Follow the plate": where the plate was when the number started, and how far it has moved since
+	t.follow = plate and db.follow and true or nil
+	t.x0, t.y0, t.fx, t.fy, t.setx, t.sety = t.x, t.y, 0, 0, 0, 0
 	if pop then
 		t.bombed = 0
 		-- the bomb is drawn at its biggest size and shrunk: shrinking keeps text sharp, growing blurs it
@@ -450,7 +454,32 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t.group:Play()
 end
 
-root:SetScript("OnUpdate", function()
+-- "Follow the plate": a number keeps up with its plate as the camera turns. A plate shifts a pixel
+-- or two every frame, which made numbers glued to it tremble, so a number follows the plate's
+-- smoothed movement (FOLLOW_RATE: how quickly it catches up) and only moves once that is a whole
+-- pixel away from where it is. A plate that hides or goes to another unit is let go of: the number
+-- carries on from where it is.
+local FOLLOW_RATE = 12
+local function Follow(t, elapsed)
+	local plate = t.plate
+	if not plate:IsShown() or (t.name and not ns.PlateShows(plate, t.name)) then
+		t.follow = nil
+		return
+	end
+	local cx, top = plate:GetCenter(), plate:GetTop()
+	if not (cx and top) then return end
+	local s = plate:GetEffectiveScale() / UIParent:GetEffectiveScale()
+	local k = math.min(1, elapsed * FOLLOW_RATE)
+	t.fx = t.fx + (cx * s - t.x0 - t.fx) * k
+	t.fy = t.fy + (top * s - t.y0 - t.fy) * k
+	local x, y = math.floor(t.fx + 0.5), math.floor(t.fy + 0.5)
+	if x ~= t.setx or y ~= t.sety then
+		t.setx, t.sety = x, y
+		t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", t.sx + x, t.sy + y)
+	end
+end
+
+root:SetScript("OnUpdate", function(_, elapsed)
 	local now = GetTime()
 	for i = #queued, 1, -1 do
 		local q = queued[i]
@@ -458,6 +487,10 @@ root:SetScript("OnUpdate", function()
 			table.remove(queued, i)
 			q.fn()
 		end
+	end
+	for i = 1, #active do
+		local t = active[i]
+		if t.follow then Follow(t, elapsed) end
 	end
 end)
 
