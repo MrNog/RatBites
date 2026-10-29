@@ -853,7 +853,9 @@ function ns.CreateOptions()
 	end)
 end
 
+-- the window is made the first time it opens, so a session that never opens it doesn't carry it
 function ns.OpenOptions()
+	if not panel then ns.CreateOptions() end
 	if ns.RestoreOptions() then return end
 	if panel:IsShown() then panel:Hide() else panel:Show() end
 end

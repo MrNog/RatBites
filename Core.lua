@@ -469,10 +469,9 @@ end)
 
 ns.On("PLAYER_LOGIN", function()
 	ns.playerGUID = UnitGUID("player")
-	-- the spec is known by now: with dual spec on, its profile may differ from the one loaded
+	-- the spec is known by now: in the second spec, its profile may differ from the one loaded
 	ns.UseProfile()
 	ns.ApplyBlizzardText()
-	ns.CreateOptions()
 end)
 
 ns.On("ACTIVE_TALENT_GROUP_CHANGED", function()

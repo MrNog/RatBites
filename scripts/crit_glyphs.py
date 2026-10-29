@@ -105,6 +105,12 @@ def build(file, path):
     return glyphs, font.size
 
 
+def num(v):
+    """a number as short as it reads the same: 0.25, 66, -11, 44"""
+    s = ("%.6f" % v).rstrip("0").rstrip(".")
+    return s if s not in ("", "-0") else "0"
+
+
 def main():
     if len(sys.argv) != 2:
         sys.exit(__doc__)
@@ -112,10 +118,13 @@ def main():
         sys.exit(f"Pillow {PIL.__version__} can't write DXT5: 11.2 or later is needed")
     addon = sys.argv[1]
     folder = os.path.join(addon, "Media", "Fonts")
+    # one string per font, unpacked in game only for the font in use: a table per character for
+    # every font cost over half a megabyte of memory
     out = ["local ADDON, ns = ...", "",
-           "-- Made by scripts/crit_glyphs.py: per font in the Font list, its texture in Media\\Crit, the size",
-           "-- its characters were drawn at, and each character's cell (left, right, top, bottom as texture",
-           "-- coordinates), its width and its pen offset and advance, in pixels of a %d-pixel-high cell." % CELL_H,
+           "-- Made by scripts/crit_glyphs.py: per font in the Font list, one string read only for the font in",
+           "-- use: its texture in Media\\Crit, the size its characters were drawn at, then each character",
+           "-- (\";\" between them): the character, its cell (left, right, top, bottom as texture coordinates),",
+           "-- its width and its pen offset and advance, in pixels of a %d-pixel-high cell." % CELL_H,
            "ns.CRIT_GLYPHS = {"]
     built, skipped = {}, []
     for name, ttf in registered(addon):
@@ -130,13 +139,11 @@ def main():
             skipped.append(name)
             continue
         glyphs, size = built[file]
-        out.append('\t["%s"] = {' % name)
-        out.append('\t\tfile = "%s",' % file)
-        out.append('\t\tsize = %d,' % size)
+        parts = []
         for c, x, y, w, left, adv in glyphs:
-            out.append('\t\t["%s"] = { %.6f, %.6f, %.6f, %.6f, %d, %d, %.1f },'
-                       % (c, x / W, (x + w) / W, y / H, (y + CELL_H) / H, w, left, adv))
-        out.append("\t},")
+            vals = (x / W, (x + w) / W, y / H, (y + CELL_H) / H, w, left, adv)
+            parts.append(c + " " + " ".join(num(v) for v in vals))
+        out.append('\t["%s"] = "%s|%d|%s",' % (name, file, size, ";".join(parts)))
     out += ["}", "ns.CRIT_CELL = %d" % CELL_H, ""]
     with open(os.path.join(ROOT, "CritGlyphs.lua"), "w", encoding="utf-8", newline="\r\n") as f:
         f.write("\n".join(out))

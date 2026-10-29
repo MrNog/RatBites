@@ -126,6 +126,8 @@ local function StackLine(key, size)
 	local s = stacks[key]
 	if s and now - s.at < STACK_TIME then
 		s.n = (s.n + 1) % STACK_MAX
+	elseif s then
+		s.n = 0
 	else
 		s = { n = 0 }
 		stacks[key] = s
@@ -257,6 +259,24 @@ local function CritImages()
 	return name and ns.CRIT_GLYPHS[name] and name or "Blender Pro"
 end
 
+-- A font's images, unpacked from its string the first time a crit needs them: file, size and a
+-- table per character. Only the font in use is kept unpacked.
+local unpacked, unpackedName
+local function CritSet(name)
+	if unpackedName == name then return unpacked end
+	local packed = ns.CRIT_GLYPHS[name]
+	if not packed then return nil end
+	local file, size, chars = packed:match("^([^|]+)|(%d+)|(.*)$")
+	local set = { file = file, size = tonumber(size) }
+	for entry in chars:gmatch("[^;]+") do
+		local g = {}
+		for v in entry:sub(3):gmatch("%S+") do g[#g + 1] = tonumber(v) end
+		set[entry:sub(1, 1)] = g
+	end
+	unpacked, unpackedName = set, name
+	return set
+end
+
 -- The characters are textures of the number's own frame, like its icon: an animation moves and
 -- fades a frame's own textures, not frames inside it.
 
@@ -286,7 +306,7 @@ end
 
 -- the label as images at size want; false when it has a character there is no image of
 local function DrawDigits(t, label, want, color)
-	local set = ns.CRIT_GLYPHS[CritImages()]
+	local set = CritSet(CritImages())
 	if not set then return false end
 	label = label:lower()
 	for i = 1, #label do
@@ -501,6 +521,8 @@ local ITEM_ICONS = { [64413] = 46017 }
 local HEAL_SHARE = { [64413] = 0.15, [47753] = 0.30 }
 local SACRED_SHIELD = 58597
 local lastHeal = {}  -- GUID -> { amount, crit, at } of your last heal on them
+-- only the heals of the fight matter: a raid night would otherwise keep one for everyone you healed
+ns.On("PLAYER_REGEN_ENABLED", function() wipe(lastHeal) end)
 
 local function ShieldSize(id, guid)
 	local share = HEAL_SHARE[id]
