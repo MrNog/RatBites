@@ -84,11 +84,95 @@ end
 -- Beacon of Light passes each heal on through 53652 / 53654, shown with the beacon itself (53563).
 local ICON_FROM = { [53652] = 53563, [53654] = 53563 }
 
+-- The spell, talent or glyph a number belongs to, whose Spells-page ticks rule it: itself when it's one
+-- you have (a spell you can cast: the game only finds those by name; a talent with points; a glyph in
+-- a socket), else the first of its causes in Effects-Data you have (Blood Corruption -> Seal of
+-- Corruption, Replenishment -> Judgements of the Wise). nil = none of yours: an item's or a buff's.
+local owners, talents, glyphs = {}, nil, nil
+
+-- the talents with points in the spec you're in, and the glyphs in its sockets, by name
+local function Mine()
+	if not talents then
+		talents = {}
+		for tab = 1, GetNumTalentTabs() do
+			for i = 1, GetNumTalents(tab) do
+				local name, _, _, _, rank = GetTalentInfo(tab, i)
+				if name and (rank or 0) > 0 then talents[name] = true end
+			end
+		end
+		glyphs = {}
+		for i = 1, GetNumGlyphSockets() do
+			local enabled, _, spell = GetGlyphSocketInfo(i)
+			local name = enabled and spell and GetSpellInfo(spell)
+			if name then glyphs[name] = true end
+		end
+	end
+	return talents, glyphs
+end
+
+function ns.Have(name)
+	local t, g = Mine()
+	return t[name] and "talent" or GetSpellTexture(name) and "spell" or g[name] and "glyph" or nil
+end
+
+local function FindOwner(name)
+	if ns.Have(name) then return name end
+	local _, class = UnitClass("player")
+	local causes = RatBitesEffects and RatBitesEffects[class] and RatBitesEffects[class][name]
+	for _, cause in ipairs(causes or {}) do
+		if ns.Have(cause) then return cause end
+	end
+end
+
+function ns.SpellOwner(name)
+	if owners[name] == nil then owners[name] = FindOwner(name) or false end
+	return owners[name] or nil
+end
+
+-- a spell learned, a talent point, a glyph or the other spec: look again
+local function Forget() wipe(owners); talents, glyphs = nil, nil end
+for _, event in ipairs({ "SPELLS_CHANGED", "CHARACTER_POINTS_CHANGED", "GLYPH_ADDED", "GLYPH_REMOVED",
+	"GLYPH_UPDATED", "ACTIVE_TALENT_GROUP_CHANGED" }) do
+	ns.On(event, Forget)
+end
+
+-- a tooltip's whole text in lower case, read off a hidden tooltip
+local scan
+local function TipText(setter, ...)
+	scan = scan or CreateFrame("GameTooltip", "RatBitesScanTip", UIParent, "GameTooltipTemplate")
+	scan:SetOwner(UIParent, "ANCHOR_NONE")
+	scan[setter](scan, ...)
+	local parts = {}
+	for i = 1, scan:NumLines() do
+		local line = _G["RatBitesScanTipTextLeft" .. i]
+		local text = line and line:GetText()
+		if text then parts[#parts + 1] = text end
+	end
+	scan:Hide()
+	return table.concat(parts, "\n"):lower()
+end
+
+-- a number made by something you're wearing: an item or its enchant whose tooltip names it, or the
+-- item's own spell (a trinket's Use, a weapon's proc). A raid or boss buff is none of these.
+function ns.FromGear(name)
+	local low = name:lower()
+	for slot = 1, 18 do
+		local link = GetInventoryItemLink("player", slot)
+		if link and (GetItemSpell(link) == name or TipText("SetInventoryItem", "player", slot):find(low, 1, true)) then
+			return true
+		end
+	end
+end
+
+-- A spell in your spellbook shows its spellbook icon, as on the Spells page: a strike made of hidden
+-- hits (Mutilate's two hand hits) has the plain dual-wield icon on its own ids.
 local icons = {}
 local function SpellIcon(id)
 	if not id then return nil end
 	if icons[id] == nil then
-		local icon = select(3, GetSpellInfo(ICON_FROM[id] or id))
+		local name, _, icon = GetSpellInfo(ICON_FROM[id] or id)
+		local book = name and GetSpellTexture(name)
+		if book and book ~= "" then icon = book end
 		if not icon or icon == "" then icon = select(3, GetSpellInfo(id)) end
 		icons[id] = (icon and icon ~= "") and icon or false
 	end
@@ -559,7 +643,9 @@ local ITEM_ICONS = { [64413] = 46017 }
 -- hangs on talents and glyphs the log can't see, so it stays a word.
 local HEAL_SHARE = { [64413] = 0.15, [47753] = 0.30 }
 local SACRED_SHIELD = 58597
-local SEEN_KINDS = { swing = true, spell = true, dot = true, heal = true, overheal = true, shield = true }
+-- what puts a spell on the Spells page: your damage, heals and shields, and the mana, energy or rage
+-- your talents give you (Focused Attacks, Relentless Strikes), so each can be shown or hidden
+local SEEN_KINDS = { swing = true, spell = true, dot = true, heal = true, overheal = true, shield = true, power = true }
 local lastHeal = {}  -- GUID -> { amount, crit, at } of your last heal on them
 -- only the heals of the fight matter: a raid night would otherwise keep one for everyone you healed
 ns.On("PLAYER_REGEN_ENABLED", function() wipe(lastHeal) end)
@@ -698,23 +784,29 @@ end
 -- it off plates and over you, skipBox out of the boxes
 local skipFloat, skipBox = false, false
 
+-- true when the number showed somewhere (the crit sound only plays for one you can see)
 local function Route(row, plate, name, label, color, size, icon, pop, amount, sign)
 	local db = ns.db
 	local r = db.route[row]
 	local anim = (row == "heal" or row == "healMe" or row == "powerMe") and db.healAnimation or db.animation
+	local shown = false
 	if r.plate and plate and not skipFloat then
 		Show(plate, name, 0, 0, label, color, size, icon, pop, false, anim)
+		shown = true
 	elseif r.plate and not skipFloat and not skipBox and not r.mine and db.noPlateToBox then
 		-- wanted over a nameplate that isn't on screen (pets, totems, far away): My box instead
 		ToBox("mine", label, color, size, icon, pop, amount, sign)
+		shown = true
 	end
 	if r.me and not skipFloat then
 		local x, y = MeSpot()
 		Show(nil, nil, x, y, label, color, size, icon, pop, true, anim)
+		shown = true
 	end
-	if skipBox then return end
-	if r.mine then ToBox("mine", label, color, size, icon, pop, amount, sign) end
-	if r.recv then ToBox("received", label, color, size, icon, pop, amount, sign) end
+	if skipBox then return shown end
+	if r.mine then ToBox("mine", label, color, size, icon, pop, amount, sign); shown = true end
+	if r.recv then ToBox("received", label, color, size, icon, pop, amount, sign); shown = true end
+	return shown
 end
 
 local function Ticked(r) return r.plate or r.me or r.mine or r.recv end
@@ -722,14 +814,19 @@ local function Ticked(r) return r.plate or r.me or r.mine or r.recv end
 -- the What filters: kinds of hits, misses, pets, overheal and shields can each be turned off
 local function Wanted(who, kind, amount, crit)
 	local show = ns.db.show
-	if who == "pet" and not show.pet then return false end
 	if kind == "overheal" then return show.overheal end
 	if kind == "shield" then return show.shield end
 	if kind == "heal" or kind == "buff" then return true end
-	if not show[kind] then return false end
-	if amount and not show[crit and "crit" or "normal"] then return false end
-	return true
+	local hits = show.hits[who == "pet" and "pet" or kind]
+	if kind == "miss" then
+		return show.miss and (who ~= "pet" or hits.normal or hits.crit) or false
+	end
+	return hits and hits[crit and "crit" or "normal"] or false
 end
+
+-- the spell of the combat-log line being handled ("melee" for swings): a crit sound plays once per
+-- spell, however many targets it crits
+local critSpell
 
 local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 	if amount and amount <= 0 then return end
@@ -744,10 +841,15 @@ local function Outgoing(who, guid, name, kind, amount, crit, icon, miss)
 		ns.lastDest, ns.lastDestPlate = name, plate
 	end
 	local label, color, size, pop = Style(who, kind, amount, crit, miss)
-	Route(row, plate, name, label, color, size, icon, pop, amount, heal and "+" or "")
+	-- the sound only for a crit you can see (past Which hits and the Where ticks) of a spell with
+	-- both its Spells page ticks on: a spell kept off plates or out of the boxes stays quiet
+	if Route(row, plate, name, label, color, size, icon, pop, amount, heal and "+" or "")
+		and who == "player" and crit and amount and not skipFloat and not skipBox then
+		ns.CritSound(kind, critSpell)
+	end
 end
 
-local function Received(kind, amount, crit, icon, word)
+local function Received(kind, amount, crit, icon, word, who)
 	if kind == "miss" then return end
 	if (kind == "overheal" or kind == "shield") and not Wanted("player", kind) then return end
 	local heal = HEALING[kind]
@@ -775,7 +877,11 @@ local function Received(kind, amount, crit, icon, word)
 	-- a crit heal on you keeps a heal's size; a crit hit on you is bigger and pops
 	local big = crit and not heal
 	local size = big and SIZE * 1.2 or SIZE * 0.9
-	Route(row, nil, nil, label, color, size, icon, big and ns.db.critStyle == "pop", amount, heal and "+" or "-")
+	-- your own heal crit on you, when it showed and its spell has both Spells page ticks on
+	if Route(row, nil, nil, label, color, size, icon, big and ns.db.critStyle == "pop", amount, heal and "+" or "-")
+		and who == "player" and crit and heal and not skipFloat and not skipBox then
+		ns.CritSound(kind, critSpell)
+	end
 end
 
 -- /bites last: the last combat-log lines RatBites read (yours, or landing on you), what it made of
@@ -809,7 +915,8 @@ local function TraceLine(e)
 	local show = ns.db.show
 	local stop = (e.kind == "overheal" and not show.overheal and "Overheal is unticked")
 		or (e.kind == "shield" and not show.shield and "Shields are off")
-		or (ns.db.noPlates[e.spell] and ns.db.noBoxes[e.spell] and "unticked in Spells")
+		or (ns.db.noPlates[ns.SpellOwner(e.spell) or e.spell] and ns.db.noBoxes[ns.SpellOwner(e.spell) or e.spell]
+			and "unticked in Spells")
 	return format("%s %s -> %s: %s %s%s", date("%H:%M:%S", e.time), e.event, e.onMe and "you" or tostring(e.dest),
 		e.spell, e.kind and (e.kind .. " " .. tostring(e.amount or "")) or "not shown",
 		stop and (" [hidden: " .. stop .. "]")
@@ -855,14 +962,41 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 		local spell = event:find("^SWING") and MELEE or select(2, ...)
 		skipFloat, skipBox = false, false
 		if type(spell) == "string" then
-			skipFloat, skipBox = db.noPlates[spell] or false, db.noBoxes[spell] or false
+			local key = ns.SpellOwner(spell) or spell
+			skipFloat, skipBox = db.noPlates[key] or false, db.noBoxes[key] or false
 			if skipFloat and skipBox then return end
 		end
 		-- every spell of yours or your pet's that makes a number is kept, so procs and effects outside
 		-- the spellbook (Judgement heals, glyph splashes, Beacon copies) can be unticked too
+		local new
 		if amount and SEEN_KINDS[kind] and type(spell) == "string" and not ns.char.seen[spell] then
 			ns.char.seen[spell] = icon or true
+			new = true
 		end
+		-- its spell id, for the game's own tooltip on the Spells page, and what kind of number it makes
+		local id = not event:find("^SWING") and (...)
+		if ns.char.seen[spell] and type(id) == "number" then
+			ns.char.ids = ns.char.ids or {}
+			ns.char.ids[spell] = id
+		end
+		-- the spec it was seen in, so the Spells page lists only the spec you're in
+		if ns.char.seen[spell] then
+			ns.char.specs = ns.char.specs or {}
+			local specs = ns.char.specs[spell] or {}
+			specs[GetActiveTalentGroup() or 1] = true
+			ns.char.specs[spell] = specs
+		end
+		if ns.char.seen[spell] and kind ~= "overheal" then
+			ns.char.kinds = ns.char.kinds or {}
+			ns.char.kinds[spell] = kind == "power" and "power" .. (miss or 0) or kind
+		end
+		if kind == "power" and type(spell) == "string" then
+			ns.char.resources = ns.char.resources or {}
+			new = new or not ns.char.resources[spell]
+			ns.char.resources[spell] = true
+		end
+		-- an open settings window lists it at once
+		if new and RatBitesOptions and RatBitesOptions:IsShown() then ns.RefreshOptions() end
 	end
 	if kind == "shield" then
 		amount = ShieldSize((...), destGUID)
@@ -880,11 +1014,12 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 			end
 		end
 	end
+	critSpell = event:find("^SWING") and "melee" or select(2, ...)
 	ns.lastShown = nil
 	-- output is what you do to others; receiving is everything that lands on you, your own
 	-- self-heals and shields included
 	if toMe then
-		Received(kind, amount, crit, icon, miss)
+		Received(kind, amount, crit, icon, miss, who)
 	else
 		Outgoing(who, destGUID, destName, kind, amount, crit, icon, miss)
 	end
@@ -895,19 +1030,22 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	end
 end)
 
-ns.On("PLAYER_LOGIN", function()
-	local c = RAID_CLASS_COLORS[select(2, UnitClass("player"))]
-	if c then
-		-- a dark class colour (Death Knight red, Shaman blue) is lifted toward white until it reads
-		-- on a dark fight, keeping its hue
-		local r, g, b = c.r, c.g, c.b
-		local light = 0.3 * r + 0.59 * g + 0.11 * b
-		if light < 0.55 then
-			local lift = (0.55 - light) / (1 - light)
-			r, g, b = r + (1 - r) * lift, g + (1 - g) * lift, b + (1 - b) * lift
-		end
-		ns.classColor = { r, g, b }
+-- a class's colour for numbers: a dark one (Death Knight red, Shaman blue) is lifted toward white
+-- until it reads on a dark fight, keeping its hue
+function ns.ClassColor(class)
+	local c = RAID_CLASS_COLORS[class]
+	if not c then return nil end
+	local r, g, b = c.r, c.g, c.b
+	local light = 0.3 * r + 0.59 * g + 0.11 * b
+	if light < 0.55 then
+		local lift = (0.55 - light) / (1 - light)
+		r, g, b = r + (1 - r) * lift, g + (1 - g) * lift, b + (1 - b) * lift
 	end
+	return { r, g, b }
+end
+
+ns.On("PLAYER_LOGIN", function()
+	ns.classColor = ns.ClassColor(select(2, UnitClass("player")))
 end)
 
 --------------------------------------------------------------------------------
@@ -948,10 +1086,17 @@ function ns.Test()
 	local guid, name = UnitGUID("target"), UnitName("target")
 	local plate = guid and ns.PlateFor(guid, name)
 	local critSize = SIZE * db.critSize
-	-- label, colour, size, pop, Where row
+	-- "Test as" (ns.preview): that class's colour on the normal hit and its role's crit sound;
+	-- else you as you are now
+	local pv = ns.preview
+	local normal = pv and ns.ClassColor(pv.class) or db.classColorFor == "normal" and ns.classColor or COLOR.normal
+	local role = pv and pv.role or ns.CritRole("spell")
+	local crit = role == "heal" and { "+" .. Abbrev(4120), COLOR.healCrit, SIZE, false, "heal", role }
+		or { Abbrev(12431), COLOR.crit, critSize, db.critStyle == "pop", "dmg", role }
+	-- label, colour, size, pop, Where row, crit sound role
 	local hits = {
-		{ "1234", COLOR.normal, SIZE, false, "dmg" },
-		{ Abbrev(12431), COLOR.crit, critSize, db.critStyle == "pop", "dmg" },
+		{ "1234", normal, SIZE, false, "dmg" },
+		crit,
 		{ DODGE, COLOR.miss, SIZE * 0.8, false, "dmg" },
 		{ "+" .. Abbrev(812), COLOR.heal, SIZE, false, "heal" },
 		{ "Shield", COLOR.shield, SIZE * 0.85, false, "heal" },
@@ -960,6 +1105,7 @@ function ns.Test()
 	}
 	for i, h in ipairs(hits) do
 		table.insert(queued, { at = GetTime() + (i - 1) * 0.25, fn = function()
+			if h[6] then ns.PlayRole(h[6]) end
 			Route(h[5], plate, name, h[1], h[2], h[3], pick(), h[4])
 		end })
 	end

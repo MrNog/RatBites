@@ -274,14 +274,18 @@ local function ShowPage(page)
 	y = Grid(page, y,
 		{ { "me", "Over me" }, { "recv", "Input box" } },
 		{ { "healMe", "Heals on me" }, { "dmgMe", "Damage on me" }, { "powerMe", "Mana, energy, rage" } })
+	-- normal and crit hits, chosen for each kind of hit
 	y = Section(page, y, "Which hits")
-	local ticks = {}
-	for _, def in ipairs({ { "Crits", "crit" }, { "Normal hits", "normal" }, { "Auto-attacks", "swing" },
-		{ "DoTs", "dot" }, { "Pet", "pet" }, { "Misses", "miss" }, { "Overheal", "overheal" } }) do
-		local get, set = flag("show", def[2])
-		ticks[#ticks + 1] = { def[1], get, set }
-	end
-	y = Ticks(page, y, ticks)
+	y = Table(page, y, { { "normal", "Normal" }, { "crit", "Crit" } },
+		{ { "spell", "Abilities" }, { "swing", "Auto-attacks" }, { "dot", "DoTs & bleeds" }, { "pet", "Pet" } },
+		function(row, def, col, x, cy)
+			local cell = CreateFrame("Button", nil, row)
+			cell:SetWidth(30); cell:SetHeight(30)
+			cell:SetPoint("CENTER", page, "TOPLEFT", x, cy)
+			Tick(cell, flag("show", "hits", def[1], col[1])):SetPoint("CENTER")
+		end)
+	local misses, overheal = { flag("show", "miss") }, { flag("show", "overheal") }
+	y = Ticks(page, y - 4, { { "Misses", misses[1], misses[2] }, { "Overheal", overheal[1], overheal[2] } })
 	y = Choice(page, y, "Shields from my heals",
 		{ { "heal", "+11k (+240)" }, { "line", "+11k   +240" }, { "off", "+11k" } },
 		function()
@@ -391,111 +395,66 @@ local function Confirm(question, yes, onYes)
 end
 
 
--- Your spells in a grid two wide that scrolls with the mouse wheel: Melee and your class's spells
--- that make numbers, then the procs and effects you've made numbers with. A tick shows a spell,
--- untick it to hide it. The grid is read again each time the window refreshes.
-local SPELL_LINES, SPELL_COLS = 12, 2
+-- Your spells in a grid two wide that scrolls: every spell of yours that has made a number in a
+-- fight (a spell shows up the first time you use it). Its ticks rule every number it makes, its
+-- effects too (Seal of Corruption: Blood Corruption, Judgement of Corruption), and a small line under
+-- its name says what those are. The grid is read again each time the window refreshes.
+local SPELL_LINES, SPELL_COLS = 14, 2
 
--- The spells that make numbers, by class, by their English names (every rank shares its name). The
--- page lists the ones in your spellbook. Shields, buffs and spells that only pass on a share of other
--- heals are left out: their cast makes no number of its own.
-local CLASS_SPELLS = {
-	DEATHKNIGHT = {
-		"Blood Boil", "Blood Strike", "Corpse Explosion", "Death and Decay", "Death Coil", "Death Pact",
-		"Death Strike", "Frost Strike", "Heart Strike", "Howling Blast", "Icy Touch", "Obliterate",
-		"Plague Strike", "Rune Strike", "Rune Tap", "Scourge Strike", "Unholy Blight",
-	},
-	DRUID = {
-		"Claw", "Entangling Roots", "Faerie Fire (Feral)", "Ferocious Bite", "Healing Touch", "Hurricane",
-		"Insect Swarm", "Lacerate", "Lifebloom", "Maim", "Mangle (Bear)", "Mangle (Cat)", "Maul",
-		"Moonfire", "Nourish", "Pounce", "Rake", "Ravage", "Regrowth", "Rejuvenation", "Rip", "Shred",
-		"Starfall", "Starfire", "Swiftmend", "Swipe (Bear)", "Swipe (Cat)", "Thorns", "Tranquility",
-		"Typhoon", "Wild Growth", "Wrath",
-	},
-	HUNTER = {
-		"Aimed Shot", "Arcane Shot", "Auto Shot", "Black Arrow", "Chimera Shot", "Counterattack",
-		"Explosive Shot", "Explosive Trap", "Immolation Trap", "Kill Shot", "Mongoose Bite", "Multi-Shot",
-		"Raptor Strike", "Scatter Shot", "Serpent Sting", "Silencing Shot", "Steady Shot", "Volley",
-		"Wyvern Sting",
-	},
-	MAGE = {
-		"Arcane Barrage", "Arcane Blast", "Arcane Explosion", "Arcane Missiles", "Blast Wave", "Blizzard",
-		"Cone of Cold", "Dragon's Breath", "Fire Blast", "Fireball", "Flamestrike", "Frost Nova",
-		"Frostbolt", "Frostfire Bolt", "Ice Lance", "Living Bomb", "Pyroblast", "Scorch", "Shoot",
-	},
-	PALADIN = {
-		"Avenger's Shield", "Consecration", "Crusader Strike", "Divine Storm", "Exorcism",
-		"Flash of Light", "Hammer of the Righteous", "Hammer of Wrath", "Hand of Reckoning", "Holy Light",
-		"Holy Shield", "Holy Shock", "Holy Wrath", "Lay on Hands", "Retribution Aura", "Seal of Command",
-		"Seal of Corruption", "Seal of Light", "Seal of Righteousness", "Seal of Vengeance",
-		"Seal of Wisdom", "Shield of Righteousness", "Divine Plea",
-	},
-	PRIEST = {
-		"Binding Heal", "Circle of Healing", "Desperate Prayer", "Devouring Plague", "Divine Hymn",
-		"Flash Heal", "Greater Heal", "Heal", "Holy Fire", "Holy Nova", "Lesser Heal", "Mind Blast",
-		"Mind Flay", "Mind Sear", "Penance", "Prayer of Healing", "Prayer of Mending", "Renew",
-		"Shadow Word: Death", "Shadow Word: Pain", "Shoot", "Smite", "Vampiric Touch", "Dispersion",
-		"Hymn of Hope",
-	},
-	ROGUE = {
-		"Ambush", "Backstab", "Deadly Throw", "Envenom", "Eviscerate", "Fan of Knives", "Garrote",
-		"Ghostly Strike", "Gouge", "Hemorrhage", "Killing Spree", "Mutilate", "Rupture", "Shiv",
-		"Sinister Strike", "Throw",
-	},
-	SHAMAN = {
-		"Chain Heal", "Chain Lightning", "Earth Shield", "Earth Shock", "Fire Nova", "Flame Shock",
-		"Frost Shock", "Healing Stream Totem", "Healing Wave", "Lava Burst", "Lava Lash",
-		"Lesser Healing Wave", "Lightning Bolt", "Lightning Shield", "Magma Totem", "Riptide",
-		"Searing Totem", "Stormstrike", "Thunderstorm", "Water Shield", "Mana Spring Totem",
-	},
-	WARLOCK = {
-		"Chaos Bolt", "Conflagrate", "Corruption", "Curse of Agony", "Curse of Doom", "Dark Pact",
-		"Death Coil", "Drain Life", "Drain Soul", "Haunt", "Health Funnel", "Hellfire", "Immolate",
-		"Incinerate", "Life Tap", "Rain of Fire", "Searing Pain", "Seed of Corruption", "Shadow Bolt",
-		"Shadowburn", "Shadowflame", "Shadowfury", "Shoot", "Soul Fire", "Unstable Affliction",
-	},
-	WARRIOR = {
-		"Bladestorm", "Bloodthirst", "Cleave", "Concussion Blow", "Devastate", "Enraged Regeneration",
-		"Execute", "Heroic Strike", "Heroic Throw", "Intercept", "Mortal Strike", "Overpower", "Rend",
-		"Revenge", "Shattering Throw", "Shield Slam", "Shockwave", "Slam", "Thunder Clap", "Throw",
-		"Victory Rush", "Whirlwind", "Bloodrage",
-	},
+-- what kind of number a spell makes, as the short word beside it
+local TAGS = {
+	swing = "auto-attack", spell = "hit", dot = "damage over time", heal = "heal", shield = "shield",
+	power0 = "mana", power1 = "rage", power3 = "energy", power6 = "runic power",
 }
-
--- Melee, then the class's spells you have: a spell you know by name is one in your spellbook
-local function Spellbook(into)
-	into[MELEE] = select(3, GetSpellInfo(6603)) or true  -- Attack
-	local _, class = UnitClass("player")
-	for _, name in ipairs(CLASS_SPELLS[class] or {}) do
-		local known, _, icon = GetSpellInfo(name)
-		if known then into[name] = icon or true end
-	end
-end
-
--- The spellbook's spells by name, then a heading and the procs and effects that made numbers in a
--- fight but aren't in the spellbook. A heading takes a whole line: the cell beside it stays empty.
-local HEADING, BLANK = {}, {}
 
 local function byName(a, b) return a[1] < b[1] end
 
+local GROUPS = { "Class spells", "Talents", "Glyphs", "Items" }
+
+-- Melee and each class spell, talent, glyph and item proc that has made a number in the spec you're
+-- in, in those four groups, each A to Z. A number goes to what it belongs to (ns.SpellOwner: Blood
+-- Corruption to Seal of Corruption); a buff's or a boss's isn't listed. A row is { name, icon,
+-- what = "hit · heal" }.
+local GROUP_OF = { spell = 1, talent = 2, glyph = 3 }
+
 local function SpellList(list)
-	local known = {}
-	Spellbook(known)
+	local seen, kinds = ns.char.seen, ns.char.kinds or {}
+	local specs, spec = ns.char.specs or {}, GetActiveTalentGroup() or 1
+	local rows, group, what = {}, {}, {}
+	rows[MELEE], group[MELEE] = select(3, GetSpellInfo(6603)) or true, 1  -- Attack
+	for name, icon in pairs(seen) do
+		if not specs[name] or specs[name][spec] then
+			local owner = ns.SpellOwner(name)
+			local g = owner and GROUP_OF[ns.Have(owner)]
+			if name == MELEE then owner, g = MELEE, 1 end
+			if not owner and ns.FromGear(name) then owner, g = name, 4 end
+			if g then
+				rows[owner], group[owner] = rows[owner] or GetSpellTexture(owner) or icon, g
+				local tag = TAGS[kinds[name]]
+				if tag then
+					what[owner] = what[owner] or {}
+					if not tContains(what[owner], tag) then tinsert(what[owner], tag) end
+				end
+			end
+		end
+	end
+	local groups = { {}, {}, {}, {} }
+	for name, icon in pairs(rows) do
+		local tags = what[name]
+		if tags then table.sort(tags) end
+		tinsert(groups[group[name]], { name, icon, what = tags and table.concat(tags, " \194\183 ") })
+	end
 	wipe(list)
-	for name, icon in pairs(known) do list[#list + 1] = { name, icon } end
-	table.sort(list, byName)
-	local procs = {}
-	for name, icon in pairs(ns.char.seen) do
-		if not known[name] then procs[#procs + 1] = { name, icon } end
+	for g, rowsOf in ipairs(groups) do
+		if #rowsOf > 0 then
+			table.sort(rowsOf, byName)
+			while #list % SPELL_COLS ~= 0 do list[#list + 1] = false end
+			list[#list + 1] = { heading = GROUPS[g]:upper() }
+			for _ = 2, SPELL_COLS do list[#list + 1] = false end
+			for _, row in ipairs(rowsOf) do list[#list + 1] = row end
+		end
 	end
-	if #procs > 0 then
-		table.sort(procs, byName)
-		while #list % SPELL_COLS ~= 0 do list[#list + 1] = BLANK end
-		list[#list + 1] = HEADING
-		for _ = 2, SPELL_COLS do list[#list + 1] = BLANK end
-		for _, entry in ipairs(procs) do list[#list + 1] = entry end
-	end
-	while #list % SPELL_COLS ~= 0 do list[#list + 1] = BLANK end
+	while #list % SPELL_COLS ~= 0 do list[#list + 1] = false end
 end
 
 local function SpellsPage(page)
@@ -512,31 +471,44 @@ local function SpellsPage(page)
 		end
 	end
 	y = y - 16
-	local cells, list, first = {}, {}, 1
+	local cells, list, first, bar = {}, {}, 1, nil
 	local function fill()
 		SpellList(list)
 		local shown = SPELL_LINES * SPELL_COLS
 		first = math.max(1, math.min(first, #list - shown + 1))
 		for i, cell in ipairs(cells) do
 			local entry = list[first + i - 1]
-			if entry == HEADING then
+			if entry and entry.heading then
 				cell.spell = nil
-				cell.label:SetText("PROCS AND EFFECTS")
+				cell.label:SetText(entry.heading)
 				cell.label:SetTextColor(rgb(C.accentText))
+				cell.label:SetPoint("LEFT", 38, 0)
+				cell.label:SetPoint("RIGHT", -76, 0)
+				cell.what:SetText("")
 				cell.icon:Hide(); cell.plates:Hide(); cell.boxes:Hide()
 				cell:Show()
-			elseif entry and entry ~= BLANK then
+			elseif entry then
 				cell.spell = entry[1]
 				cell.label:SetText(entry[1])
-				cell.label:SetTextColor(rgb(C.text))
+				cell.label:SetTextColor(rgb(entry.inert and C.textDim or C.text))
+				cell.what:SetText(entry.what or "")
+				-- the name sits up a little when the line under it has something to say
+				cell.label:SetPoint("LEFT", 38, entry.what and 6 or 0)
+				cell.label:SetPoint("RIGHT", -76, entry.what and 6 or 0)
 				cell.icon:SetTexture(type(entry[2]) == "string" and entry[2] or nil)
-				cell.icon:Show(); cell.plates:Show(); cell.boxes:Show()
-				cell.plates:Paint(); cell.boxes:Paint()
+				cell.icon:Show()
+				if entry.inert then
+					cell.plates:Hide(); cell.boxes:Hide()
+				else
+					cell.plates:Show(); cell.boxes:Show()
+					cell.plates:Paint(); cell.boxes:Paint()
+				end
 				cell:Show()
 			else
 				cell:Hide()
 			end
 		end
+		bar:Paint(#list / SPELL_COLS, (first - 1) / SPELL_COLS)
 	end
 	local function scroll(_, delta)
 		first = first - delta * SPELL_COLS * 2
@@ -565,6 +537,20 @@ local function SpellsPage(page)
 			cell.label:SetPoint("LEFT", 38, 0)
 			cell.label:SetPoint("RIGHT", -76, 0)
 			cell.label:SetJustifyH("LEFT")
+			cell.what = Text(cell, 11, C.textDim)
+			cell.what:SetPoint("TOPLEFT", cell.label, "BOTTOMLEFT", 0, -1)
+			cell.what:SetPoint("RIGHT", -76, 0)
+			cell.what:SetJustifyH("LEFT")
+			-- the game's tooltip for the spell, so a proc's name says what it is
+			cell:SetScript("OnEnter", function(self)
+				local id = self.spell and (ns.char.ids or {})[self.spell]
+				local link = id and ("spell:" .. id) or (self.spell and GetSpellLink(self.spell))
+				if not link then return end
+				GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+				GameTooltip:SetHyperlink(link:match("spell:%d+"))
+				GameTooltip:Show()
+			end)
+			cell:SetScript("OnLeave", function() GameTooltip:Hide() end)
 			-- a tick for plates and one for boxes; ticked = shown there
 			local function Place(key, x)
 				local b = CreateFrame("Button", nil, cell)
@@ -591,6 +577,57 @@ local function SpellsPage(page)
 		end
 	end
 	y = y - SPELL_LINES * ROW_H
+	-- a scrollbar beside the grid while the list is longer than the page: a dark track and a gold
+	-- thumb as tall as the share in view; drag the thumb, click the track or use the wheel
+	local gridH = SPELL_LINES * ROW_H
+	local track = CreateFrame("Button", nil, page)
+	track:SetWidth(8); track:SetHeight(gridH)
+	track:SetPoint("TOPLEFT", MARGIN + COL_W + 12, y + gridH)
+	local well = track:CreateTexture(nil, "BACKGROUND")
+	well:SetTexture(ns.FLAT)
+	well:SetVertexColor(0, 0, 0, 0.45)
+	well:SetAllPoints(track)
+	local thumb = CreateFrame("Button", nil, track)
+	thumb:SetWidth(8)
+	local paint = thumb:CreateTexture(nil, "ARTWORK")
+	paint:SetTexture(ns.FLAT)
+	paint:SetVertexColor(rgb(C.accent))
+	paint:SetAllPoints(thumb)
+	thumb:SetScript("OnEnter", function() paint:SetVertexColor(rgb(C.accentHi)) end)
+	thumb:SetScript("OnLeave", function() paint:SetVertexColor(rgb(C.accent)) end)
+	local lines, top = 0, 0
+	local function toLine(line)
+		local want = math.floor(line + 0.5) * SPELL_COLS + 1
+		if want ~= first then first = want; fill() end
+	end
+	function track:Paint(total, at)
+		lines, top = math.ceil(total), at
+		if lines <= SPELL_LINES then track:Hide() return end
+		track:Show()
+		local h = math.max(24, gridH * SPELL_LINES / lines)
+		thumb:SetHeight(h)
+		thumb:ClearAllPoints()
+		thumb:SetPoint("TOP", track, "TOP", 0, -(gridH - h) * top / (lines - SPELL_LINES))
+	end
+	thumb:SetScript("OnMouseDown", function(self)
+		local _, cy = GetCursorPosition()
+		local startY, startTop, scale = cy, top, self:GetEffectiveScale()
+		self:SetScript("OnUpdate", function()
+			local _, y2 = GetCursorPosition()
+			local span = gridH - self:GetHeight()
+			if span > 0 then toLine(startTop + (startY - y2) / scale / span * (lines - SPELL_LINES)) end
+		end)
+	end)
+	thumb:SetScript("OnMouseUp", function(self) self:SetScript("OnUpdate", nil) end)
+	thumb:SetScript("OnHide", function(self) self:SetScript("OnUpdate", nil) end)
+	track:SetScript("OnClick", function(self)
+		local _, cy = GetCursorPosition()
+		local share = (self:GetTop() - cy / self:GetEffectiveScale()) / gridH
+		toLine(share * lines - SPELL_LINES / 2)
+	end)
+	track:EnableMouseWheel(true)
+	track:SetScript("OnMouseWheel", scroll)
+	bar = track
 	refreshers[#refreshers + 1] = fill
 	return y
 end
@@ -630,18 +667,36 @@ local function ProfilesPage(page)
 		return list
 	end
 
+	-- like ElvUI: the first row is the spec you're in (the profile every page edits), the second the
+	-- other spec's; they swap when you switch spec. The secondary spec can use "the same" as the primary.
+	local function second() return (GetActiveTalentGroup() or 1) == 2 end
+	local function spec(isSecond) return isSecond and "secondary spec" or "primary spec" end
+
 	local y = Section(page, TOP, "Profiles", true, "Every character on this account can use any of them.")
-	y = Choice(page, y, "Profile", names,
-		function() return ns.char.profile end,
-		function(v) ns.SetProfile(v) end)
-	y = Choice(page, y, "Second spec uses",
+	local current = Row(page, y, "")
+	DropControl(current, CONTROL_W, names, ns.ActiveProfile, function(v)
+		if second() then ns.SetProfile(v, "second") else ns.SetProfile(v) end
+	end):SetPoint("RIGHT", -8, 0)
+	y = y - ROW_H
+	local other = Row(page, y, "")
+	DropControl(other, CONTROL_W,
 		function()
 			local list = names()
-			table.insert(list, 1, { "same", "The same" })
+			if not second() then table.insert(list, 1, { "same", "The same" }) end
 			return list
 		end,
-		function() return ns.char.second or "same" end,
-		function(v) ns.SetProfile(v ~= "same" and v or nil, "second") end)
+		function()
+			if second() then return ns.char.profile end
+			return ns.char.second or "same"
+		end,
+		function(v)
+			if second() then ns.SetProfile(v) else ns.SetProfile(v ~= "same" and v or nil, "second") end
+		end):SetPoint("RIGHT", -8, 0)
+	y = y - ROW_H
+	refreshers[#refreshers + 1] = function()
+		current.label:SetText("Profile |cff9a9a9a(" .. spec(second()) .. ", in use)|r")
+		other.label:SetText(spec(not second()):gsub("^%l", strupper) .. " uses")
+	end
 	local row = Row(page, y, "New profile")
 	local well
 	local create = ns.RedButton(row, "Create", 80, 22)
@@ -715,6 +770,15 @@ local function AppPage(page)
 	local y = Section(page, TOP, "App", true, "The same for every profile.")
 	y = Check(page, y, "RatBites on", app("enabled"))
 	y = Check(page, y, "Hide the game's own numbers", app("hideBlizzard"))
+	if ns.SoundPack() then y = Check(page, y, "Crit sounds", app("critSounds")) end
+	if ns.PackVolumes() then
+		-- each step plays a crit sound at the new volume, to hear it
+		local get, set = app("critVolume")
+		y = Stepper(page, y, "Crit volume", 25, 100, 25, function(v) return format("%d%%", v) end, get, function(v)
+			set(v)
+			ns.PlayRole(ns.CritRole("spell"))
+		end)
+	end
 	y = Check(page, y, "Minimap button", app("minimapButton"))
 	y = Check(page, y, "Background art", app("bgOn"))
 	return y
@@ -857,6 +921,8 @@ function ns.CreateOptions()
 	local test = ns.RedButton(foot, "", 120, 22)
 	test:SetPoint("RIGHT", move, "LEFT", -6, 0)
 	test:SetScript("OnClick", function() ns.SetTestLoop(not ns.TestLooping()); Changed() end)
+	-- test as another class and role: its colour on the numbers, its crit sound
+	DropControl(foot, 170, ns.PreviewValues, ns.PreviewKey, ns.SetPreview):SetPoint("RIGHT", test, "LEFT", -6, 0)
 	refreshers[#refreshers + 1] = function()
 		who:SetText("Profile: |cffffd100" .. ns.ActiveProfile() .. "|r")
 		test:SetText(ns.TestLooping() and "Stop test" or "Test")

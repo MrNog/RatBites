@@ -56,6 +56,41 @@
 - `/bites test`: one number of each kind on your target
 - `/bites colors`: every kind of number in its colour, as your settings draw it
 - `/bites move`: unlock the boxes to move and resize them
+- `/bites sound`: plays each crit sound, and says which one your crits use now
+
+## Crit sounds
+
+Your crits play a sound, one bag per role or class. The sounds are in RatBites' **`Sounds`** folder,
+one folder per bag, and you can change them.
+
+```
+Interface\AddOns\RatBites\Sounds\
+  Tank\  Healer\  Hunter Bow\  Hunter Gun\
+  Death Knight\  Paladin\  Warrior\  Rogue\
+  Mage\  Warlock\  Priest\  Shaman\  Druid\
+  List.lua             the list RatBites reads
+  Update sounds.bat    rewrites that list from the folders (needs Python)
+```
+
+Turn the sounds off with **Crit sounds** in the settings.
+
+- **Which bag plays:** a heal crit plays *Healer*, while tanking *Tank*, a hunter *Hunter Bow* or
+  *Hunter Gun* (the weapon equipped), anyone else their class folder. A class without a folder
+  uses *Rogue*.
+- **Variants:** every `.ogg` in a folder is a variant, by any name. They play in a shuffled order, so
+  the same sound doesn't play twice in a row.
+- **Adding or removing sounds:** put `.ogg` files in a folder or take them out, then run
+  **Update sounds.bat**. Folders starting with `_` are skipped: keep sounds there that you're only
+  trying out.
+- **Why the extra step:** WoW can't look inside a folder. It plays a sound only by its exact file name,
+  so `List.lua` has to list them, and the game finds new files only when it starts. After adding
+  files, **close WoW and open it again**. After only removing files, `/reload` is enough.
+- **Volume:** the game can't turn one sound down. With Python's `soundfile` installed, the update also
+  writes quieter copies (25/50/75 %), and the **Crit volume** setting picks one.
+- **Testing:** `/bites sound` plays every bag. *Test as* (bottom of the settings) lets you hear and
+  see another class or role on your own hits.
+- **When a crit plays a sound:** only when its number is shown (*Which hits* and the plate/box ticks),
+  and only when both ticks of its spell are on in the *Spells* page.
 
 ## Notes
 
