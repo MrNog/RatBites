@@ -680,31 +680,42 @@ local function Received(kind, amount, crit, icon, word)
 end
 
 -- /bites last: the last combat-log lines RatBites read (yours, or landing on you), what it made of
--- each and where it went, to find out why a number didn't show
-local trace, TRACE_MAX = {}, 12
+-- each and where it went, to find out why a number didn't show. A raid sends hundreds of lines a
+-- second, so each is kept as its plain values in a ring of reused tables and only turned into text
+-- when /bites last asks.
+local trace, TRACE_MAX, traceAt = {}, 12, 0
 
-local function Trace(event, sourceGUID, destGUID, destName, kind, amount, id, spellName)
-	local db = ns.db
-	local onMe = destGUID == ns.playerGUID
-	local row = kind and (onMe and (HEALING[kind] and "healMe" or "dmgMe") or (HEALING[kind] and "heal" or "dmg"))
-	local r = row and db.route[row]
+local function Trace(event, destGUID, destName, kind, amount, id, spellName)
+	traceAt = traceAt % TRACE_MAX + 1
+	local e = trace[traceAt]
+	if not e then
+		e = {}
+		trace[traceAt] = e
+	end
+	e.time, e.event, e.onMe, e.dest, e.kind, e.amount = time(), event, destGUID == ns.playerGUID, destName, kind, amount
+	e.spell = type(spellName) == "string" and spellName or "melee"
+end
+
+local function TraceLine(e)
+	local row = e.kind and (e.onMe and (HEALING[e.kind] and "healMe" or "dmgMe") or (HEALING[e.kind] and "heal" or "dmg"))
+	local r = row and ns.db.route[row]
 	local places = {}
 	if r then
 		for _, key in ipairs({ "plate", "me", "mine", "recv" }) do
 			if r[key] then places[#places + 1] = key end
 		end
 	end
-	local spell = type(spellName) == "string" and spellName or "melee"
-	local line = format("%s %s -> %s: %s %s%s", date("%H:%M:%S"), event, onMe and "you" or tostring(destName),
-		tostring(spell), kind and (kind .. " " .. tostring(amount or "")) or "not shown",
+	return format("%s %s -> %s: %s %s%s", date("%H:%M:%S", e.time), e.event, e.onMe and "you" or tostring(e.dest),
+		e.spell, e.kind and (e.kind .. " " .. tostring(e.amount or "")) or "not shown",
 		r and (" [" .. (#places > 0 and table.concat(places, " ") or "nowhere") .. "]") or "")
-	table.insert(trace, line)
-	if #trace > TRACE_MAX then table.remove(trace, 1) end
 end
 
 function ns.PrintTrace()
 	if #trace == 0 then ns.Print("nothing read yet") return end
-	for _, line in ipairs(trace) do ns.Print(line) end
+	-- oldest first: the ring starts after the latest one
+	for i = 1, #trace do
+		ns.Print(TraceLine(trace[(traceAt + i - 1) % #trace + 1]))
+	end
 end
 
 ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFlags, destGUID, destName, _, ...)
@@ -720,7 +731,7 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 		lastHeal[destGUID] = h
 	end
 	local kind, amount, crit, icon, miss = Read(event, ...)
-	Trace(event, sourceGUID, destGUID, destName, kind, amount, ...)
+	Trace(event, destGUID, destName, kind, amount, ...)
 	if not kind then return end
 	-- your own auto-attacks show the weapon doing them: main hand for swings, the ranged slot for
 	-- Auto Shot, wands and throws (an empty slot keeps the plain sword)
