@@ -45,6 +45,7 @@ ns.DEFAULTS = {
 	classColorFor = "off",  -- "normal" = your normal damage in your class colour
 	critStyle = "pop",
 	critSize = 5,  -- a crit (Pop or Bigger) against a normal hit
+	healCritSize = 3,  -- a heal crit against a normal heal; 1 = a heal's size, no pop
 	numbers = "short",
 	-- Which hits: hits[kind] = { normal, crit } for abilities (spell), auto-attacks (swing), DoTs and
 	-- bleeds (dot) and your pet's hits (pet); misses, shields and overheal on their own

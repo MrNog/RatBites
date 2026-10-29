@@ -27,6 +27,7 @@ local COLOR = {
 	heal = { 0.4, 0.88, 0.45 },
 	healCrit = { 0.25, 1, 0.72, thick = true },
 	overheal = { 0.45, 0.62, 0.45 },
+	overhealCrit = { 0.45, 0.62, 0.45, thick = true },
 	shield = { 0.55, 0.82, 1 },
 	buff = { 1, 0.9, 0.55 },
 	taken = { 0.88, 0.32, 0.27 },
@@ -732,14 +733,14 @@ local function Style(who, kind, amount, crit, miss)
 		if crit then
 			if kind == "heal" then
 				color = COLOR.healCrit
-			elseif kind ~= "overheal" then
+			elseif kind == "overheal" then
+				color = COLOR.overhealCrit
+			else
 				color = COLOR.crit
 			end
-			-- damage crits grow and pop; a heal crit keeps a heal's size, standing out by its colour
-			if kind ~= "heal" and kind ~= "overheal" then
-				if db.critStyle == "big" then size = size * db.critSize end
-				if db.critStyle == "pop" then size, pop = size * db.critSize, true end
-			end
+			-- crits grow by Crit size (heal and overheal crits by Heal crit size) and pop
+			local grow = (kind == "heal" or kind == "overheal") and (db.healCritSize or 1) or db.critSize
+			if grow > 1 then size, pop = size * grow, db.critStyle == "pop" end
 		end
 	end
 	if who == "pet" then size = size * 0.8 end
@@ -868,17 +869,21 @@ local function Received(kind, amount, crit, icon, word, who)
 	elseif not amount or amount <= 0 then
 		return
 	elseif kind == "overheal" then
-		label, color = "+" .. Abbrev(amount), COLOR.overheal
+		label, color = "+" .. Abbrev(amount), crit and COLOR.overhealCrit or COLOR.overheal
 	elseif kind == "heal" then
 		label, color = "+" .. Abbrev(amount), crit and COLOR.healCrit or COLOR.heal
 	else
 		label, color = "-" .. Abbrev(amount), crit and COLOR.takenCrit or COLOR.taken
 	end
-	-- a crit heal on you keeps a heal's size; a crit hit on you is bigger and pops
-	local big = crit and not heal
-	local size = big and SIZE * 1.2 or SIZE * 0.9
+	-- a crit heal on you grows by Heal crit size; a crit hit on you is bigger; both pop
+	local size, pop = SIZE * 0.9, false
+	if crit and (kind == "heal" or kind == "overheal") and (ns.db.healCritSize or 1) > 1 then
+		size, pop = size * ns.db.healCritSize, ns.db.critStyle == "pop"
+	elseif crit and not heal then
+		size, pop = SIZE * 1.2, ns.db.critStyle == "pop"
+	end
 	-- your own heal crit on you, when it showed and its spell has both Spells page ticks on
-	if Route(row, nil, nil, label, color, size, icon, big and ns.db.critStyle == "pop", amount, heal and "+" or "-")
+	if Route(row, nil, nil, label, color, size, icon, pop, amount, heal and "+" or "-")
 		and who == "player" and crit and heal and not skipFloat and not skipBox then
 		ns.CritSound(kind, critSpell)
 	end
@@ -918,7 +923,7 @@ local function TraceLine(e)
 		or (ns.db.noPlates[ns.SpellOwner(e.spell) or e.spell] and ns.db.noBoxes[ns.SpellOwner(e.spell) or e.spell]
 			and "unticked in Spells")
 	return format("%s %s -> %s: %s %s%s", date("%H:%M:%S", e.time), e.event, e.onMe and "you" or tostring(e.dest),
-		e.spell, e.kind and (e.kind .. " " .. tostring(e.amount or "")) or "not shown",
+		e.spell, e.kind and (e.kind .. " " .. tostring(e.amount or "") .. (e.crit and " crit" or "")) or "not shown",
 		stop and (" [hidden: " .. stop .. "]")
 		or r and (" [" .. (#places > 0 and table.concat(places, " ") or "nowhere") .. "]") or "")
 end
@@ -946,6 +951,7 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	end
 	local kind, amount, crit, icon, miss = Read(event, ...)
 	Trace(event, destGUID, destName, kind, amount, ...)
+	trace[traceAt].crit = crit
 	if not kind then return end
 	-- your own auto-attacks show the weapon doing them: main hand for swings, the ranged slot for
 	-- Auto Shot, wands and throws (an empty slot keeps the plain sword)
@@ -1091,7 +1097,9 @@ function ns.Test()
 	local pv = ns.preview
 	local normal = pv and ns.ClassColor(pv.class) or db.classColorFor == "normal" and ns.classColor or COLOR.normal
 	local role = pv and pv.role or ns.CritRole("spell")
-	local crit = role == "heal" and { "+" .. Abbrev(4120), COLOR.healCrit, SIZE, false, "heal", role }
+	local healCrit = db.healCritSize or 1
+	local crit = role == "heal"
+		and { "+" .. Abbrev(4120), COLOR.healCrit, SIZE * healCrit, healCrit > 1 and db.critStyle == "pop", "heal", role }
 		or { Abbrev(12431), COLOR.crit, critSize, db.critStyle == "pop", "dmg", role }
 	-- label, colour, size, pop, Where row, crit sound role
 	local hits = {
@@ -1130,7 +1138,7 @@ local function LegendEntries()
 		{ "Pet", normal, "310", 0.8 },
 		{ "Miss", COLOR.miss, DODGE, 0.8 },
 		{ "Heal", COLOR.heal, "+1923", 1 },
-		{ "Heal crit", healCrit, "+4.1k", critSize },
+		{ "Heal crit", healCrit, "+4.1k", db.healCritSize or 1 },
 		{ "Overheal", COLOR.overheal, "+1.2k", 1 },
 		{ "Shield", COLOR.shield, "+177", 0.85 },
 		{ "Damage taken", COLOR.taken, "-640", 0.9 },

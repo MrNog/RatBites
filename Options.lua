@@ -311,6 +311,7 @@ local function LookPage(page)
 	y = Section(page, y, "Crits")
 	y = Check(page, y, "Crits pop", either("pop", "big", flag("critStyle")))
 	y = Stepper(page, y, "Crit size", 2, 30, 1, function(v) return format("%gx", v) end, flag("critSize"))
+	y = Stepper(page, y, "Heal crit size", 1, 30, 1, function(v) return format("%gx", v) end, flag("healCritSize"))
 	y = Section(page, y, "Motion")
 	local moves = { { "arc", "Arc" }, { "rise", "Rise" }, { "stay", "Stay" } }
 	y = Choice(page, y, "Damage", moves, flag("animation"))
