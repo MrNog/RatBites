@@ -31,7 +31,7 @@ ns.DEFAULTS = {
 	},
 	scale = 1,
 	iconScale = 1,  -- an icon's size against its number's text
-	font = "friz",
+	font = "lsm:Blender Pro",
 	icons = true,
 	hideSpells = {},   -- spell name -> true: the ones you unticked there
 	classColorFor = "off",  -- "normal" = your normal damage, "crit" = your crits; the other keeps its colour
@@ -172,6 +172,9 @@ local function Upgrade(db)
 	UpgradeRoute(db)
 	-- the Spells tab lists the spellbook only: spells once collected from the combat log go
 	db.seen, db.seenClean = nil, nil
+	-- the Font list holds only the fonts big crits have images for: one picked before goes to Blender Pro
+	local font = db.font and db.font:match("^lsm:(.+)")
+	if not (font and ns.CRIT_GLYPHS[font]) then db.font = "lsm:Blender Pro" end
 	-- crits went from 2.7x to 5x by default: a profile still on the old default follows, once
 	if not db.critSizeSet then
 		if db.critSize == 2.7 then db.critSize = 5 end

@@ -34,21 +34,19 @@ local COLOR = {
 }
 ns.COLOR = COLOR
 
--- The game's four fonts, then every font other addons registered with LibSharedMedia (ElvUI's,
--- SharedMedia packs), keyed "lsm:<name>". Read when the settings window is built, after they loaded.
+-- The fonts big crits have images for (CritGlyphs.lua), so every number in a font matches its
+-- crits, keyed "lsm:<name>": the ones SharedMedia has loaded. Without SharedMedia, the game's four
+-- (crits then drawn in Blender Pro). Read when the settings window is built, after they loaded.
 function ns.FontList()
 	local list = {}
-	for _, f in ipairs(ns.FONTS) do list[#list + 1] = { f[1], f[2] } end
 	local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 	if LSM then
 		for _, name in ipairs(LSM:List("font")) do
-			local path = LSM:Fetch("font", name)
-			local builtIn = false
-			for _, f in ipairs(ns.FONTS) do
-				if f[3]:lower() == (path or ""):lower() then builtIn = true end
-			end
-			if not builtIn then list[#list + 1] = { "lsm:" .. name, name } end
+			if ns.CRIT_GLYPHS[name] then list[#list + 1] = { "lsm:" .. name, name } end
 		end
+	end
+	if #list == 0 then
+		for _, f in ipairs(ns.FONTS) do list[#list + 1] = { f[1], f[2] } end
 	end
 	return list
 end
@@ -267,11 +265,11 @@ end
 
 -- Big crits are drawn as images: each character is a piece of
 -- Media\Crit\<font>.blp, drawn large with its black outline, white tinted to the crit's colour, so
--- it is sharp at any size. Made for Pokemon Solid and Blender Pro; any other font uses Blender Pro.
+-- it is sharp at any size. Made for every font in the Font list; a font without them uses Blender Pro's.
 local CRIT_TRACK = 4  -- extra room between characters, in pixels of the drawn cell
 local function CritImages()
-	local name = (ns.db.font:match("^lsm:(.+)") or ""):lower()
-	return name:find("pokemon") and "pokemon" or "blender"
+	local name = ns.db.font:match("^lsm:(.+)")
+	return name and ns.CRIT_GLYPHS[name] and name or "Blender Pro"
 end
 
 -- The characters are textures of the number's own frame, like its icon: an animation moves and
@@ -303,8 +301,7 @@ end
 
 -- the label as images at size want; false when it has a character there is no image of
 local function DrawDigits(t, label, want, color)
-	local key = CritImages()
-	local set = ns.CRIT_GLYPHS and ns.CRIT_GLYPHS[key]
+	local set = ns.CRIT_GLYPHS[CritImages()]
 	if not set then return false end
 	label = label:lower()
 	for i = 1, #label do
@@ -318,7 +315,7 @@ local function DrawDigits(t, label, want, color)
 			tex = t:CreateTexture(nil, "OVERLAY")
 			t.glyphs[i] = tex
 		end
-		tex:SetTexture([[Interface\AddOns\RatBites\Media\Crit\]] .. key)
+		tex:SetTexture([[Interface\AddOns\RatBites\Media\Crit\]] .. set.file)
 		tex:SetTexCoord(g[1], g[2], g[3], g[4])
 		tex:SetVertexColor(color[1], color[2], color[3])
 		tex:Show()
