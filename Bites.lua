@@ -322,7 +322,8 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	ns.lastShown = t
 	t.anim = column and "rise" or db.animation
 	t.rise, t.duration = db.height, db.duration
-	t.line = StackLine(plate or format("%d:%d", x, y), size)
+	-- lines stack a normal hit's height apart: a crit's own size would push it lines and lines up
+	t.line = StackLine(plate or format("%d:%d", x, y), color.thick and SIZE or size)
 	if column then
 		t.dx = 0
 	else
