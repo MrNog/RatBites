@@ -1,0 +1,9 @@
+{
+  "game": "wotlk",
+  "name": "RatBites",
+  "desc": "Nameplate damage numbers",
+  "folders": [
+    "RatBites"
+  ],
+  "asset": "RatBites.zip"
+}
