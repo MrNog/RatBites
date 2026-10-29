@@ -7,6 +7,7 @@ local ADDON, ns = ...
 
 local LINE_GAP = 4
 local FADE = 0.5   -- a line fades over its last half second
+local BOX_CRIT = 1.4  -- the biggest a line gets in a box, against a normal hit
 local EDGE_PAD = 8  -- left- or right-aligned lines keep this far from the box's side
 local NAMES = { mine = "Output box", received = "Input box" }
 
@@ -228,7 +229,9 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	line.label, line.iconPath, line.color, line.count = label, icon, color, 1
 	line.total, line.sign, line.first, line.shield = amount, sign, GetTime(), nil
 	line.serial = ns.NextSerial()
-	size = size * db.scale
+	-- a crit in a box is only a little bigger than its neighbours (the plates show it full size), so
+	-- one crit can't fill the box; its line keeps the room its text takes
+	size = math.min(size, ns.SIZE * BOX_CRIT) * db.scale
 	line.text:SetFont(ns.FontPath(), size, color.thick and "THICKOUTLINE" or "OUTLINE")
 	line.text:SetText(label)
 	line.text:SetTextColor(color[1], color[2], color[3])
