@@ -231,7 +231,9 @@ local function Acquire()
 	t.edge:SetVertexColor(0, 0, 0)
 	t.icon = t:CreateTexture(nil, "OVERLAY")
 	t.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-	t.icon:SetPoint("RIGHT", t.text, "LEFT", -4, 0)
+	t.digits = CreateFrame("Frame", nil, t)
+	t.digits:SetPoint("CENTER")
+	t.digits.tex = {}
 	t.edge:SetPoint("TOPLEFT", t.icon, "TOPLEFT", -1, 1)
 	t.edge:SetPoint("BOTTOMRIGHT", t.icon, "BOTTOMRIGHT", 1, -1)
 	-- order 1 is the whole path for most animations; Fountain goes up in order 1, down in order 2
@@ -259,9 +261,52 @@ end
 -- past the biggest size it takes. The thick outline is for normal-sized crits only: on a big number
 -- it is a heavy black edge, so a crit past THICK_MAX takes the thin one.
 local THICK_MAX = 32
+local SHARP_MAX = 32  -- the biggest text the client draws sharp; past it, text is enlarged
 local function SetSize(t)
 	t.text:SetFont(ns.FontPath(), t.fontPx, t.thick and t.want <= THICK_MAX and "THICKOUTLINE" or "OUTLINE")
 	if t.want > t.fontPx then t.text:SetTextHeight(t.want) end
+end
+
+-- Big crits drawn as images (the "Big crits" setting on Images): each character is a piece of
+-- Media\Crit\<font>.blp, drawn large with its black outline, white tinted to the crit's colour, so
+-- it is sharp at any size. Made for Pokemon Solid and Blender Pro; any other font uses Blender Pro.
+local CRIT_TRACK = 4  -- extra room between characters, in pixels of the drawn cell
+local function CritImages()
+	local name = (ns.db.font:match("^lsm:(.+)") or ""):lower()
+	return name:find("pokemon") and "pokemon" or "blender"
+end
+
+-- the label as images at size want; false when it has a character there is no image of
+local function DrawDigits(t, label, want, color)
+	local key = CritImages()
+	local set = ns.CRIT_GLYPHS and ns.CRIT_GLYPHS[key]
+	if not set then return false end
+	label = label:lower()
+	for i = 1, #label do
+		if not set[label:sub(i, i)] then return false end
+	end
+	local d, k = t.digits, want / set.size
+	local cell, pen, right = ns.CRIT_CELL * k, 0, 0
+	for i = 1, #label do
+		local g = set[label:sub(i, i)]
+		local tex = d.tex[i]
+		if not tex then
+			tex = d:CreateTexture(nil, "OVERLAY")
+			d.tex[i] = tex
+		end
+		tex:SetTexture([[Interface\AddOns\RatBites\Media\Crit\]] .. key)
+		tex:SetTexCoord(g[1], g[2], g[3], g[4])
+		tex:SetVertexColor(color[1], color[2], color[3])
+		tex:SetWidth(g[5] * k); tex:SetHeight(cell)
+		tex:ClearAllPoints()
+		tex:SetPoint("LEFT", d, "LEFT", (pen + g[6]) * k, 0)
+		tex:Show()
+		right = (pen + g[6] + g[5]) * k
+		pen = pen + g[7] + CRIT_TRACK
+	end
+	for i = #label + 1, #d.tex do d.tex[i]:Hide() end
+	d:SetWidth(math.max(1, right)); d:SetHeight(cell)
+	return true
 end
 
 local function Bombing(group, elapsed)
@@ -270,11 +315,12 @@ local function Bombing(group, elapsed)
 	local f = 1 - t.bombed / BOMB_TIME
 	if f <= 0 then
 		-- landed: drawn again at its own size, so it is sharp rather than resampled
-		SetSize(t)
+		if t.useDigits then t.digits:SetScale(1) else SetSize(t) end
 		group:SetScript("OnUpdate", nil)
 		return
 	end
-	t.text:SetTextHeight(t.want * (1 + (BOMB - 1) * f * f))
+	local grow = 1 + (BOMB - 1) * f * f
+	if t.useDigits then t.digits:SetScale(grow) else t.text:SetTextHeight(t.want * grow) end
 end
 
 -- Sets the number's path (h is the Height setting, dx its sideways drift), after a popping crit's
@@ -324,13 +370,27 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t:SetFrameLevel(root:GetFrameLevel() + (color.thick and 20 or 1))
 	-- the size it should show at (Text size included): its font as big as the client takes it,
 	-- stretched the rest
+	-- Big crits ("Big crits" setting): Images draws them from character images, sharp at any size;
+	-- Sharp keeps them at the biggest size the client draws text sharp; Text stretches the text.
 	local want = size * db.scale
+	if color.thick and db.critDraw == "sharp" then want = math.min(want, SHARP_MAX) end
 	local fontPx = math.min(FontMax(ns.FontPath()), math.floor(want + 0.5))
 	t.want, t.fontPx, t.thick = want, fontPx, color.thick
 	-- a new font string takes no text before it has a font
 	SetSize(t)
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
+	t.useDigits = color.thick and want > SHARP_MAX and db.critDraw == "image"
+		and DrawDigits(t, label, want, color)
+	t.digits:SetScale(1)
+	t.icon:ClearAllPoints()
+	if t.useDigits then
+		t.text:Hide(); t.digits:Show()
+		t.icon:SetPoint("RIGHT", t.digits, "LEFT", -4, 0)
+	else
+		t.digits:Hide(); t.text:Show()
+		t.icon:SetPoint("RIGHT", t.text, "LEFT", -4, 0)
+	end
 	-- an icon has a normal hit's size; a crit's grows with its number, to half its height
 	local iconSize = SIZE * db.scale * db.iconScale
 	if color.thick then iconSize = math.max(iconSize, want * 0.5 * db.iconScale) end
@@ -374,8 +434,12 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 		t.bombed = 0
 		-- the bomb is drawn at its biggest size and shrunk: shrinking keeps text sharp, growing blurs it
 		local big = want * BOMB
-		t.text:SetFont(ns.FontPath(), math.min(FontMax(ns.FontPath()), math.floor(big + 0.5)), "OUTLINE")
-		t.text:SetTextHeight(big)
+		if t.useDigits then
+			t.digits:SetScale(BOMB)
+		else
+			t.text:SetFont(ns.FontPath(), math.min(FontMax(ns.FontPath()), math.floor(big + 0.5)), "OUTLINE")
+			t.text:SetTextHeight(big)
+		end
 		t.group:SetScript("OnUpdate", Bombing)
 	else
 		t.group:SetScript("OnUpdate", nil)
