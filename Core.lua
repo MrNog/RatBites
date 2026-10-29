@@ -6,9 +6,9 @@ local ADDON, ns = ...
 -- on you), me (over your character), mine (My box) and recv (Received box)
 -- noPlateToBox: a number wanted over a nameplate that isn't on screen goes to My box instead
 -- joinShields: a shield your heal makes (Val'anyr, Divine Aegis) joins that heal's number
--- animation: "arc", "rise", "stay", "fountain" or "fall" (Bites.lua's Path)
--- critStyle: "pop" = starts large and settles, "big" = larger, "plain" = colour only
--- numbers: "short" = 12.4k, "full" = 12,431, "raw" = 12431
+-- animation: "arc", "rise" or "stay" (Bites.lua's Plan)
+-- critStyle: "pop" = starts large and settles, "big" = larger
+-- numbers: "short" = 12.4k, "full" = 12,431
 ns.DEFAULTS = {
 	enabled = true,
 	route = {
@@ -38,13 +38,11 @@ ns.DEFAULTS = {
 	bigGold = true,
 	critStyle = "pop",
 	critSize = 5,  -- a crit (Pop or Bigger) against a normal hit
-	spread = "normal",
 	numbers = "short",
 	show = { normal = true, crit = true, swing = true, spell = true, dot = true, miss = true, pet = true,
 		shield = true, overheal = true },
 	hideBlizzard = true,
 	bgOn = true,
-	bgArt = 0.5,
 	minimapButton = true,
 	minimapAngle = 220,
 }
@@ -172,6 +170,15 @@ local function Upgrade(db)
 	UpgradeRoute(db)
 	-- the Spells tab lists the spellbook only: spells once collected from the combat log go
 	db.seen, db.seenClean = nil, nil
+	-- settings made simpler: each old choice to the nearest one left
+	if db.animation == "fountain" or db.animation == "fall" then db.animation = "arc" end
+	if db.numbers == "raw" then db.numbers = "full" end
+	if db.critStyle == "plain" then db.critStyle = "big" end
+	if db.classColorFor == "crit" then db.classColorFor = "normal" end
+	for _, b in pairs(db.boxes or {}) do
+		if b.merge and b.merge ~= 0 then b.merge = 1 end
+	end
+	db.spread, db.bgArt = nil, nil
 	-- the Font list holds only the fonts big crits have images for: one picked before goes to Blender Pro
 	local font = db.font and db.font:match("^lsm:(.+)")
 	if not (font and ns.CRIT_GLYPHS[font]) then db.font = "lsm:Blender Pro" end

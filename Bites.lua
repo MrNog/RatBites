@@ -130,7 +130,7 @@ local pool, active, queued = {}, {}, {}
 local arc = 1
 
 -- how far a number drifts sideways while it rises: at least [1], plus up to [2] more at random
-local SPREAD = { none = { 0, 0 }, tight = { 8, 8 }, normal = { 15, 15 }, wide = { 35, 30 } }
+local DRIFT, DRIFT_MORE = 15, 15  -- an arc's sideways drift: at least DRIFT, up to DRIFT_MORE further
 
 -- Numbers that land on the same spot together (a heal and its proc, a multi-hit) would start on top
 -- of each other, so each one within STACK_TIME of the last starts a line higher, up to STACK_MAX.
@@ -243,6 +243,7 @@ local function Acquire()
 	t.y2 = g:CreateAnimation("Translation"); t.y2:SetOrder(2)
 	t.fade = g:CreateAnimation("Alpha")
 	t.fade:SetChange(-1)
+	t.fade:SetOrder(1)
 	return t
 end
 
@@ -346,31 +347,18 @@ end
 -- Sets the number's path (h is the Height setting, dx its sideways drift), after a popping crit's
 -- bomb:
 --   arc: drifts sideways while the rise eases out   rise: straight up   stay: holds, only fades
---   fountain: up, then back down past its start   fall: starts h above and drifts down to it
 local function Plan(t, pop)
 	local d, h, dx = t.duration, t.rise, t.dx
 	local wait = pop and BOMB_TIME or 0
 	local fadeAt, fadeLen = d * FADE_AT, d * (1 - FADE_AT)
-	if t.anim == "fountain" then
-		local up = d * 0.45
-		Leg(t.x1, dx * 0.45, 0, up, "NONE", wait)
-		Leg(t.y1, 0, h, up, "OUT", wait)
-		Leg(t.x2, dx * 0.55, 0, d - up, "NONE")
-		Leg(t.y2, 0, -h * 1.2, d - up, "IN")
-		t.fade:SetOrder(2)
-		t.fade:SetStartDelay(math.max(0, fadeAt - up))
-	else
-		local x, y, smoothing = dx, h, "OUT"
-		if t.anim == "rise" then x = 0 end
-		if t.anim == "stay" then x, y = 0, 0 end
-		if t.anim == "fall" then x, y, smoothing = 0, -h, "IN_OUT" end
-		Leg(t.x1, x, 0, d, "NONE", wait)
-		Leg(t.y1, 0, y, d, smoothing, wait)
-		Leg(t.x2, 0, 0, 0.01, "NONE")
-		Leg(t.y2, 0, 0, 0.01, "NONE")
-		t.fade:SetOrder(1)
-		t.fade:SetStartDelay(wait + fadeAt)
-	end
+	local x, y = dx, h
+	if t.anim == "rise" then x = 0 end
+	if t.anim == "stay" then x, y = 0, 0 end
+	Leg(t.x1, x, 0, d, "NONE", wait)
+	Leg(t.y1, 0, y, d, "OUT", wait)
+	Leg(t.x2, 0, 0, 0.01, "NONE")
+	Leg(t.y2, 0, 0, 0.01, "NONE")
+	t.fade:SetStartDelay(wait + fadeAt)
 	t.fade:SetDuration(fadeLen)
 end
 
@@ -443,13 +431,11 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 		t.dx = 0
 	else
 		arc = -arc
-		local sp = SPREAD[db.spread] or SPREAD.normal
-		t.dx = arc * (sp[1] + math.random() * sp[2])
+		t.dx = arc * (DRIFT + math.random() * DRIFT_MORE)
 	end
 	local startY = t.y + (column and 0 or START_GAP) + t.line * db.scale
 	-- a crit starts a normal line above the rest, so at its size it doesn't cover hits landing with it
 	if color.thick then startY = startY + (SIZE + 6) * db.scale end
-	if t.anim == "fall" then startY = startY + t.rise end
 	t:ClearAllPoints()
 	t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", math.floor(t.x + 0.5), math.floor(startY + 0.5))
 	if pop then
@@ -607,9 +593,7 @@ local function Style(who, kind, amount, crit, miss)
 		end
 		if kind == "dot" then size = SIZE * 0.9 end
 		if crit then
-			if kind ~= "overheal" and db.classColorFor == "crit" and ns.classCrit then
-				color = ns.classCrit
-			elseif kind == "heal" then
+			if kind == "heal" then
 				color = COLOR.healCrit
 			elseif kind ~= "overheal" then
 				color = COLOR.crit
@@ -820,7 +804,6 @@ ns.On("PLAYER_LOGIN", function()
 			r, g, b = r + (1 - r) * lift, g + (1 - g) * lift, b + (1 - b) * lift
 		end
 		ns.classColor = { r, g, b }
-		ns.classCrit = { r, g, b, thick = true }
 	end
 end)
 
@@ -861,7 +844,7 @@ function ns.Test()
 	local db = ns.db
 	local guid, name = UnitGUID("target"), UnitName("target")
 	local plate = guid and ns.PlateFor(guid, name)
-	local critSize = SIZE * (db.critStyle == "plain" and 1 or db.critSize)
+	local critSize = SIZE * db.critSize
 	-- label, colour, size, pop, Where row
 	local hits = {
 		{ "1234", COLOR.normal, SIZE, false, "dmg" },
@@ -889,10 +872,9 @@ local legend
 -- label, colour, sample, size against a normal hit; built on each opening, so it follows the settings
 local function LegendEntries()
 	local db = ns.db
-	local critSize = db.critStyle == "plain" and 1 or db.critSize
+	local critSize = db.critSize
 	local normal = db.classColorFor == "normal" and ns.classColor or COLOR.normal
-	local crit = db.classColorFor == "crit" and ns.classCrit or COLOR.crit
-	local healCrit = db.classColorFor == "crit" and ns.classCrit or COLOR.healCrit
+	local crit, healCrit = COLOR.crit, COLOR.healCrit
 	return {
 		{ "Normal hit", normal, "1234", 1 },
 		{ "Big hit", db.bigGold and COLOR.big or normal, "2331", 1.15 },

@@ -147,6 +147,11 @@ local function Action(parent, y, text, onClick, label)
 	return y - ROW_H
 end
 
+-- a tick for a setting that holds one of two values: ticked is on, unticked off
+local function either(on, off, get, set)
+	return function() return get() == on end, function(v) set(v and on or off) end
+end
+
 -- a setting by its path in the active profile ("show", "heal"): a getter and a setter that read
 -- ns.db on every call, so they follow a profile switch
 local function flag(...)
@@ -199,10 +204,11 @@ local function Percent(v) return format("%d%%", v * 100 + 0.5) end
 -- the rows' names are. The file is 1024x512; the picture is 4:3.
 local BG_TEX = [[Interface\AddOns\RatBites\Media\settings-bg]]
 local BG_ASPECT = 4 / 3
+local BG_ART = 0.5  -- how strongly the art shows through
 
 local function PaintArt(art, wash, w, h)
 	local db = ns.db
-	local a = db.bgOn and (db.bgArt or 0) or 0
+	local a = db.bgOn and BG_ART or 0
 	if a <= 0 then art:Hide(); wash:Hide(); return end
 	art:SetTexture(BG_TEX)
 	local want = w / h
@@ -239,9 +245,7 @@ local function LookPage(page)
 	local y = Section(page, TOP, "Text", true)
 	y = Choice(page, y, "Font", ns.FontList(), flag("font"))
 	y = Stepper(page, y, "Text size", 0.5, 2, 0.1, Percent, flag("scale"))
-	y = Choice(page, y, "Number format",
-		{ { "short", "12.4k" }, { "full", "12,431" }, { "raw", "12431" } },
-		flag("numbers"))
+	y = Check(page, y, "Short numbers (12.4k)", either("short", "full", flag("numbers")))
 	y = Section(page, y, "Icons")
 	y = Check(page, y, "Spell icons", flag("icons"))
 	y = Stepper(page, y, "Icon size", 0.5, 2, 0.1, Percent, flag("iconScale"))
@@ -249,26 +253,19 @@ local function LookPage(page)
 	y = Action(page, y, "Color examples",
 		function() ns.ToggleLegend() end,
 		function() return "Show (/bites colors)" end)
-	y = Choice(page, y, "Critical hits",
-		{ { "pop", "Pop" }, { "big", "Bigger" }, { "plain", "Plain" } },
-		flag("critStyle"))
+	y = Check(page, y, "Crits pop", either("pop", "big", flag("critStyle")))
 	y = Stepper(page, y, "Critical hit size", 2, 30, 1, function(v) return format("%gx", v) end,
 		flag("critSize"))
 	y = Check(page, y, "Big hits in gold", flag("bigGold"))
-	y = Choice(page, y, "My class color for",
-		{ { "off", "Off" }, { "normal", "Normal hits" }, { "crit", "Crits" } },
-		flag("classColorFor"))
+	y = Check(page, y, "Class color on my hits", either("normal", "off", flag("classColorFor")))
 	return y
 end
 
 local function MotionPage(page)
 	local y = Section(page, TOP, "Floating numbers", true)
 	y = Choice(page, y, "Animation",
-		{ { "arc", "Arc" }, { "rise", "Rise" }, { "stay", "Stay" }, { "fountain", "Fountain" }, { "fall", "Fall" } },
+		{ { "arc", "Arc" }, { "rise", "Rise" }, { "stay", "Stay" } },
 		flag("animation"))
-	y = Choice(page, y, "Sideways drift",
-		{ { "none", "None" }, { "tight", "Tight" }, { "normal", "Normal" }, { "wide", "Wide" } },
-		flag("spread"))
 	y = Stepper(page, y, "Travel distance", 20, 150, 10, function(v) return format("%d", v) end, flag("height"))
 	y = Stepper(page, y, "Time on screen", 0.8, 4, 0.1, function(v) return format("%.1fs", v) end, flag("duration"))
 	return y
@@ -296,8 +293,16 @@ local function WhatPage(page)
 	y = Check(page, y, "Pet damage", flag("show", "pet"))
 	y = Check(page, y, "Misses (dodge, parry ...)", flag("show", "miss"))
 	y = Section(page, y, "Your heals", nil, "Heals and the shields they make.")
-	y = Check(page, y, "Shields", flag("show", "shield"))
-	y = Check(page, y, "Join shields to the heal that made them", flag("joinShields"))
+	y = Choice(page, y, "Shields",
+		{ { "heal", "On the heal" }, { "line", "Own line" }, { "off", "Off" } },
+		function()
+			local db = ns.db
+			return not db.show.shield and "off" or db.joinShields and "heal" or "line"
+		end,
+		function(v)
+			local db = ns.db
+			db.show.shield, db.joinShields = v ~= "off", v == "heal"
+		end)
 	y = Check(page, y, "Overheal (dim)", flag("show", "overheal"))
 	return y
 end
@@ -316,9 +321,7 @@ local function BoxesPage(page)
 		y = Choice(page, y, "Text alignment",
 			{ { "left", "Left" }, { "center", "Center" }, { "right", "Right" } },
 			flag("boxes", def[1], "align"))
-		y = Choice(page, y, "Merge repeats within",
-			{ { 0, "Off" }, { 0.5, "0.5 sec" }, { 1, "1 sec" }, { 2, "2 sec" }, { 3, "3 sec" } },
-			flag("boxes", def[1], "merge"))
+		y = Check(page, y, "Merge repeats (x2, x3 ...)", either(1, 0, flag("boxes", def[1], "merge")))
 		y = Stepper(page, y, "Each line stays", 2, 10, 1, function(v) return format("%ds", v) end, flag("boxes", def[1], "time"))
 	end
 	return y
@@ -551,7 +554,6 @@ local function ProfilesPage(page)
 	y = Section(page, y, "Window", nil, "This settings window and the minimap button.")
 	y = Check(page, y, "Minimap button", flag("minimapButton"))
 	y = Check(page, y, "Background art", flag("bgOn"))
-	y = Stepper(page, y, "Art strength", 0.1, 1, 0.1, function(v) return format("%.1f", v) end, flag("bgArt"))
 	return y
 end
 
