@@ -84,6 +84,86 @@ end
 -- Beacon of Light passes each heal on through 53652 / 53654, shown with the beacon itself (53563).
 local ICON_FROM = { [53652] = 53563, [53654] = 53563 }
 
+-- The spell, talent or glyph a number belongs to, whose Spells-page ticks rule it: itself when it's one
+-- you have (a spell you can cast: the game only finds those by name; a talent with points; a glyph in
+-- a socket), else the first of its causes in Effects-Data you have (Blood Corruption -> Seal of
+-- Corruption, Replenishment -> Judgements of the Wise). nil = none of yours: an item's or a buff's.
+local owners, talents, glyphs = {}, nil, nil
+
+-- the talents with points in the spec you're in, and the glyphs in its sockets, by name
+local function Mine()
+	if not talents then
+		talents = {}
+		for tab = 1, GetNumTalentTabs() do
+			for i = 1, GetNumTalents(tab) do
+				local name, _, _, _, rank = GetTalentInfo(tab, i)
+				if name and (rank or 0) > 0 then talents[name] = true end
+			end
+		end
+		glyphs = {}
+		for i = 1, GetNumGlyphSockets() do
+			local enabled, _, spell = GetGlyphSocketInfo(i)
+			local name = enabled and spell and GetSpellInfo(spell)
+			if name then glyphs[name] = true end
+		end
+	end
+	return talents, glyphs
+end
+
+function ns.Have(name)
+	local t, g = Mine()
+	return t[name] and "talent" or GetSpellTexture(name) and "spell" or g[name] and "glyph" or nil
+end
+
+local function FindOwner(name)
+	if ns.Have(name) then return name end
+	local _, class = UnitClass("player")
+	local causes = RatBitesEffects and RatBitesEffects[class] and RatBitesEffects[class][name]
+	for _, cause in ipairs(causes or {}) do
+		if ns.Have(cause) then return cause end
+	end
+end
+
+function ns.SpellOwner(name)
+	if owners[name] == nil then owners[name] = FindOwner(name) or false end
+	return owners[name] or nil
+end
+
+-- a spell learned, a talent point, a glyph or the other spec: look again
+local function Forget() wipe(owners); talents, glyphs = nil, nil end
+for _, event in ipairs({ "SPELLS_CHANGED", "CHARACTER_POINTS_CHANGED", "GLYPH_ADDED", "GLYPH_REMOVED",
+	"GLYPH_UPDATED", "ACTIVE_TALENT_GROUP_CHANGED" }) do
+	ns.On(event, Forget)
+end
+
+-- a tooltip's whole text in lower case, read off a hidden tooltip
+local scan
+local function TipText(setter, ...)
+	scan = scan or CreateFrame("GameTooltip", "RatBitesScanTip", UIParent, "GameTooltipTemplate")
+	scan:SetOwner(UIParent, "ANCHOR_NONE")
+	scan[setter](scan, ...)
+	local parts = {}
+	for i = 1, scan:NumLines() do
+		local line = _G["RatBitesScanTipTextLeft" .. i]
+		local text = line and line:GetText()
+		if text then parts[#parts + 1] = text end
+	end
+	scan:Hide()
+	return table.concat(parts, "\n"):lower()
+end
+
+-- a number made by something you're wearing: an item or its enchant whose tooltip names it, or the
+-- item's own spell (a trinket's Use, a weapon's proc). A raid or boss buff is none of these.
+function ns.FromGear(name)
+	local low = name:lower()
+	for slot = 1, 18 do
+		local link = GetInventoryItemLink("player", slot)
+		if link and (GetItemSpell(link) == name or TipText("SetInventoryItem", "player", slot):find(low, 1, true)) then
+			return true
+		end
+	end
+end
+
 -- A spell in your spellbook shows its spellbook icon, as on the Spells page: a strike made of hidden
 -- hits (Mutilate's two hand hits) has the plain dual-wield icon on its own ids.
 local icons = {}
@@ -835,7 +915,8 @@ local function TraceLine(e)
 	local show = ns.db.show
 	local stop = (e.kind == "overheal" and not show.overheal and "Overheal is unticked")
 		or (e.kind == "shield" and not show.shield and "Shields are off")
-		or (ns.db.noPlates[e.spell] and ns.db.noBoxes[e.spell] and "unticked in Spells")
+		or (ns.db.noPlates[ns.SpellOwner(e.spell) or e.spell] and ns.db.noBoxes[ns.SpellOwner(e.spell) or e.spell]
+			and "unticked in Spells")
 	return format("%s %s -> %s: %s %s%s", date("%H:%M:%S", e.time), e.event, e.onMe and "you" or tostring(e.dest),
 		e.spell, e.kind and (e.kind .. " " .. tostring(e.amount or "")) or "not shown",
 		stop and (" [hidden: " .. stop .. "]")
@@ -881,18 +962,41 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 		local spell = event:find("^SWING") and MELEE or select(2, ...)
 		skipFloat, skipBox = false, false
 		if type(spell) == "string" then
-			skipFloat, skipBox = db.noPlates[spell] or false, db.noBoxes[spell] or false
+			local key = ns.SpellOwner(spell) or spell
+			skipFloat, skipBox = db.noPlates[key] or false, db.noBoxes[key] or false
 			if skipFloat and skipBox then return end
 		end
 		-- every spell of yours or your pet's that makes a number is kept, so procs and effects outside
 		-- the spellbook (Judgement heals, glyph splashes, Beacon copies) can be unticked too
+		local new
 		if amount and SEEN_KINDS[kind] and type(spell) == "string" and not ns.char.seen[spell] then
 			ns.char.seen[spell] = icon or true
+			new = true
+		end
+		-- its spell id, for the game's own tooltip on the Spells page, and what kind of number it makes
+		local id = not event:find("^SWING") and (...)
+		if ns.char.seen[spell] and type(id) == "number" then
+			ns.char.ids = ns.char.ids or {}
+			ns.char.ids[spell] = id
+		end
+		-- the spec it was seen in, so the Spells page lists only the spec you're in
+		if ns.char.seen[spell] then
+			ns.char.specs = ns.char.specs or {}
+			local specs = ns.char.specs[spell] or {}
+			specs[GetActiveTalentGroup() or 1] = true
+			ns.char.specs[spell] = specs
+		end
+		if ns.char.seen[spell] and kind ~= "overheal" then
+			ns.char.kinds = ns.char.kinds or {}
+			ns.char.kinds[spell] = kind == "power" and "power" .. (miss or 0) or kind
 		end
 		if kind == "power" and type(spell) == "string" then
 			ns.char.resources = ns.char.resources or {}
+			new = new or not ns.char.resources[spell]
 			ns.char.resources[spell] = true
 		end
+		-- an open settings window lists it at once
+		if new and RatBitesOptions and RatBitesOptions:IsShown() then ns.RefreshOptions() end
 	end
 	if kind == "shield" then
 		amount = ShieldSize((...), destGUID)

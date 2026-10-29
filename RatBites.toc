@@ -9,6 +9,7 @@ Core.lua
 Style.lua
 Plates.lua
 CritGlyphs.lua
+Effects-Data.lua
 Bites.lua
 Sounds\List.lua
 Sounds.lua

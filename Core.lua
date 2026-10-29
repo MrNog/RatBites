@@ -504,7 +504,8 @@ ns.On("PLAYER_LOGIN", function()
 end)
 
 ns.On("ACTIVE_TALENT_GROUP_CHANGED", function()
-	if ns.char.second then ns.UseProfile() end
+	ns.UseProfile()
+	if ns.RefreshOptions then ns.RefreshOptions() end
 end)
 
 -- /rb is the game's Raid Browser
