@@ -160,22 +160,33 @@ local function Create(key)
 end
 
 -- A line's text: its number (the merged total when it has one) or word, "xN" once merged, and the
--- shields its heals made in shield blue at the end.
+-- shields its heals made in shield blue at the end, in brackets: "+11.0k (+240)".
 local SHIELD_HEX = "8cd1ff"
+local function ShieldText(amount)
+	return " |cff" .. SHIELD_HEX .. "(+" .. ns.Abbrev(amount) .. ")|r"
+end
+
 local function LineText(line)
 	local s = line.total and (line.sign or "") .. ns.Abbrev(line.total) or line.label
 	if line.count > 1 then s = s .. " x" .. line.count end
-	if line.shield then s = s .. " |cff" .. SHIELD_HEX .. "+" .. ns.Abbrev(line.shield) .. "|r" end
+	if line.shield then s = s .. ShieldText(line.shield) end
 	return s
 end
 
--- a shield made by a heal joins the line that heal is on (box line or floating number)
+-- A shield made by a heal joins the line that heal is on (box line or floating number). A big crit
+-- drawn from images keeps them, and the shield goes after them as normal-sized text.
 function ns.JoinShield(el, amount)
 	el.shield = (el.shield or 0) + amount
 	if el.count then
 		el.text:SetText(LineText(el))
+	elseif el.useDigits then
+		el.text:SetFont(ns.FontPath(), math.floor(ns.SIZE * ns.db.scale + 0.5), "OUTLINE")
+		el.text:SetText(ShieldText(el.shield))
+		el.text:ClearAllPoints()
+		el.text:SetPoint("LEFT", el.glyphs[#el.glyphLabel], "RIGHT", 2, 0)
+		el.text:Show()
 	else
-		el.text:SetText(el.label .. " |cff" .. SHIELD_HEX .. "+" .. ns.Abbrev(el.shield) .. "|r")
+		el.text:SetText(el.label .. ShieldText(el.shield))
 	end
 end
 

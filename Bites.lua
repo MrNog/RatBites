@@ -400,6 +400,9 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column)
 	t.text:SetText(label)
 	t.text:SetTextColor(color[1], color[2], color[3])
 	t.useDigits = color.thick and want > SHARP_MAX and DrawDigits(t, label, want, color)
+	-- a joined shield may have moved the text beside a crit's images: back on the centre
+	t.text:ClearAllPoints()
+	t.text:SetPoint("CENTER")
 	t.icon:ClearAllPoints()
 	if t.useDigits then
 		t.text:Hide()
