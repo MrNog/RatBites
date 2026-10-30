@@ -53,24 +53,53 @@ local function Bare(name)
 	return name and (name:match("^([^%-]+)%-") or name)
 end
 
+-- An AoE lands on many plates in one frame, so the shown plates are listed by name once per frame
+-- (GetTime holds still within a frame) instead of every plate being read for every hit. The lists
+-- are reused from frame to frame.
+local byName, spare, builtAt = {}, {}, nil
+local function Index()
+	local now = GetTime()
+	if builtAt == now then return end
+	builtAt = now
+	Scan()
+	for n, list in pairs(byName) do
+		wipe(list)
+		spare[#spare + 1] = list
+		byName[n] = nil
+	end
+	for f, text in pairs(plates) do
+		if f:IsShown() then
+			local n = text:GetText()
+			if n then
+				local list = byName[n]
+				if not list then
+					list = table.remove(spare) or {}
+					byName[n] = list
+				end
+				list[#list + 1] = f
+			end
+		end
+	end
+end
+
 -- the plate showing this unit, or nil when none can be told apart
 function ns.PlateFor(guid, name)
 	name = Bare(name)
 	if not name then return nil end
-	Scan()
-	local only, count = nil, 0
+	Index()
+	local list = byName[name]
+	if not list then return nil end
+	if #list == 1 then
+		lastPlate[guid] = list[1]
+		return list[1]
+	end
 	local isTarget = UnitExists("target") and UnitGUID("target") == guid
 	local last = lastPlate[guid]
 	local pick
-	for f, text in pairs(plates) do
-		if f:IsShown() and text:GetText() == name then
-			count = count + 1
-			only = f
-			if isTarget and IsTargetPlate(f) then pick = f end
-			if not pick and f == last then pick = f end
-		end
+	for _, f in ipairs(list) do
+		if isTarget and IsTargetPlate(f) then pick = f end
+		if not pick and f == last then pick = f end
 	end
-	if count == 1 then pick = only end
 	if pick then lastPlate[guid] = pick end
 	return pick
 end

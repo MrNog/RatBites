@@ -71,16 +71,26 @@ function ns.NextSerial()
 	return serial
 end
 
+-- every number asks for it, so the path found for a font setting is kept until the setting changes;
+-- the game's font (a font LibSharedMedia doesn't have yet) is not kept, so it is looked up again
+local pathKey, pathFound
 function ns.FontPath()
 	local key = ns.db.font
+	if key == pathKey then return pathFound end
 	local name = key:match("^lsm:(.+)")
 	if name then
 		local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 		local path = LSM and LSM:Fetch("font", name, true)
-		if path then return path end
+		if path then
+			pathKey, pathFound = key, path
+			return path
+		end
 	end
 	for _, f in ipairs(ns.FONTS) do
-		if f[1] == key then return f[3] end
+		if f[1] == key then
+			pathKey, pathFound = key, f[3]
+			return f[3]
+		end
 	end
 	return STANDARD_TEXT_FONT
 end
@@ -341,9 +351,24 @@ end
 -- it is a heavy black edge, so a crit past THICK_MAX takes the thin one.
 local THICK_MAX = 32
 local SHARP_MAX = 32  -- the biggest text the client draws sharp; past it, text is enlarged
+-- SetFont is one of the dearer calls and most numbers reuse the font they had, so it is only set when
+-- it changes. SetTextHeight stretches the text past its font, so after one the font is set again.
+local function SetFontOf(t, size, flags)
+	local path = ns.FontPath()
+	if t.fontPath ~= path or t.fontSize ~= size or t.fontFlags ~= flags then
+		t.text:SetFont(path, size, flags)
+		t.fontPath, t.fontSize, t.fontFlags = path, size, flags
+	end
+end
+
+local function Stretch(t, height)
+	t.text:SetTextHeight(height)
+	t.fontSize = nil
+end
+
 local function SetSize(t)
-	t.text:SetFont(ns.FontPath(), t.fontPx, t.thick and t.want <= THICK_MAX and "THICKOUTLINE" or "OUTLINE")
-	if t.want > t.fontPx then t.text:SetTextHeight(t.want) end
+	SetFontOf(t, t.fontPx, t.thick and t.want <= THICK_MAX and "THICKOUTLINE" or "OUTLINE")
+	if t.want > t.fontPx then Stretch(t, t.want) end
 end
 
 -- Big crits are drawn as images: each character is a piece of
@@ -449,7 +474,7 @@ local function Bombing(group, elapsed)
 		return
 	end
 	local grow = 1 + (BOMB - 1) * f * f
-	if t.useDigits then PlaceDigits(t, t.want * grow) else t.text:SetTextHeight(t.want * grow) end
+	if t.useDigits then PlaceDigits(t, t.want * grow) else Stretch(t, t.want * grow) end
 end
 
 -- Sets the number's path (h is the Height setting, dx its sideways drift), after a popping crit's
@@ -559,7 +584,7 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, an
 	t.anim = anim or db.animation
 	t.rise, t.duration = RISE, db.duration
 	-- lines stack a normal hit's height apart: a crit's own size would push it lines and lines up
-	t.line = StackLine(plate or format("%d:%d", x, y), color.thick and SIZE or size)
+	t.line = StackLine(plate or math.floor(x) * 65536 + math.floor(y), color.thick and SIZE or size)
 	if column then
 		t.dx = 0
 	else
@@ -578,8 +603,8 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, an
 		if t.useDigits then
 			PlaceDigits(t, big)
 		else
-			t.text:SetFont(ns.FontPath(), math.min(FontMax(ns.FontPath()), math.floor(big + 0.5)), "OUTLINE")
-			t.text:SetTextHeight(big)
+			SetFontOf(t, math.min(FontMax(ns.FontPath()), math.floor(big + 0.5)), "OUTLINE")
+			Stretch(t, big)
 		end
 		t.group:SetScript("OnUpdate", Bombing)
 	else
@@ -652,6 +677,17 @@ local SACRED_SHIELD = 58597
 -- your talents give you (Focused Attacks, Relentless Strikes), so each can be shown or hidden
 local SEEN_KINDS = { swing = true, spell = true, dot = true, heal = true, overheal = true, shield = true, power = true }
 local lastHeal = {}  -- GUID -> { amount, crit, at } of your last heal on them
+-- the Spells page's kind for a power gain ("power0" mana ... "power6" runic power), made once
+local POWER_KIND = setmetatable({}, { __index = function(t, k)
+	local v = "power" .. k
+	t[k] = v
+	return v
+end })
+-- the talent spec you're in, read when it changes rather than on every hit
+local spec = 1
+local function ReadSpec() spec = GetActiveTalentGroup() or 1 end
+ns.On("PLAYER_LOGIN", ReadSpec)
+ns.On("ACTIVE_TALENT_GROUP_CHANGED", ReadSpec)
 -- only the heals of the fight matter: a raid night would otherwise keep one for everyone you healed
 ns.On("PLAYER_REGEN_ENABLED", function() wipe(lastHeal) end)
 
@@ -804,8 +840,9 @@ local function Route(row, plate, name, label, color, size, icon, pop, amount, si
 		shown = true
 	end
 	if r.me and not skipFloat then
+		-- over you moves like on plates, by the Motion setting
 		local x, y = MeSpot()
-		Show(nil, nil, x, y, label, color, size, icon, pop, true, anim)
+		Show(nil, nil, x, y, label, color, size, icon, pop, false, anim)
 		shown = true
 	end
 	if skipBox then return shown end
@@ -927,7 +964,8 @@ local function TraceLine(e)
 		or (e.kind == "shield" and not show.shield and "Shields are off")
 		or (ns.db.noPlates[ns.SpellOwner(e.spell) or e.spell] and ns.db.noBoxes[ns.SpellOwner(e.spell) or e.spell]
 			and "unticked in Spells")
-	return format("%s %s %s -> %s: %s %s%s", date("%H:%M:%S", e.time), e.event, e.src or "?",
+	return format("%s %s %s %s -> %s: %s %s%s", date("%H:%M:%S", e.time), e.event, tostring(e.srcName),
+		e.who or "other",
 		e.onMe and "you" or tostring(e.dest),
 		e.spell, e.kind and (e.kind .. " " .. tostring(e.amount or "") .. (e.crit and " crit" or "")) or "not shown",
 		stop and (" [hidden: " .. stop .. "]")
@@ -949,6 +987,7 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, sourceName, 
 	skipFloat, skipBox = false, false
 	local toMe = destGUID == ns.playerGUID
 	if not who and not toMe then return end
+	local swing = event == "SWING_DAMAGE" or event == "SWING_MISSED"
 	if who and (event == "SPELL_HEAL" or event == "SPELL_PERIODIC_HEAL") then
 		local _, _, _, healed, _, _, healCrit = ...
 		local h = lastHeal[destGUID] or {}
@@ -957,7 +996,9 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, sourceName, 
 	end
 	local kind, amount, crit, icon, miss = Read(event, ...)
 	Trace(event, destGUID, destName, kind, amount, ...)
-	trace[traceAt].crit, trace[traceAt].src = crit, format("%s %s", tostring(sourceName), tostring(who or "other"))
+	-- plain values only: a raid sends hundreds of lines a second and /bites last formats them
+	local e = trace[traceAt]
+	e.crit, e.srcName, e.who = crit, sourceName, who
 	if not kind then return end
 	-- your own auto-attacks show the weapon doing them: main hand for swings, the ranged slot for
 	-- Auto Shot, wands and throws (an empty slot keeps the plain sword)
@@ -971,7 +1012,7 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, sourceName, 
 	-- a spell unticked in the Spells tab doesn't show (by name, so all its ranks are one); swings go
 	-- by the game's word for melee
 	if who then
-		local spell = event:find("^SWING") and MELEE or select(2, ...)
+		local spell = swing and MELEE or select(2, ...)
 		skipFloat, skipBox = false, false
 		if type(spell) == "string" then
 			local key = ns.SpellOwner(spell) or spell
@@ -986,21 +1027,25 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, sourceName, 
 			new = true
 		end
 		-- its spell id, for the game's own tooltip on the Spells page, and what kind of number it makes
-		local id = not event:find("^SWING") and (...)
+		local id = not swing and (...)
 		if ns.char.seen[spell] and type(id) == "number" then
 			ns.char.ids = ns.char.ids or {}
-			ns.char.ids[spell] = id
+			if ns.char.ids[spell] ~= id then ns.char.ids[spell] = id end
 		end
 		-- the spec it was seen in, so the Spells page lists only the spec you're in
 		if ns.char.seen[spell] then
 			ns.char.specs = ns.char.specs or {}
-			local specs = ns.char.specs[spell] or {}
-			specs[GetActiveTalentGroup() or 1] = true
-			ns.char.specs[spell] = specs
+			local specs = ns.char.specs[spell]
+			if not specs then
+				specs = {}
+				ns.char.specs[spell] = specs
+			end
+			if not specs[spec] then specs[spec] = true end
 		end
 		if ns.char.seen[spell] and kind ~= "overheal" then
 			ns.char.kinds = ns.char.kinds or {}
-			ns.char.kinds[spell] = kind == "power" and "power" .. (miss or 0) or kind
+			local k = kind == "power" and POWER_KIND[miss or 0] or kind
+			if ns.char.kinds[spell] ~= k then ns.char.kinds[spell] = k end
 		end
 		if kind == "power" and type(spell) == "string" then
 			ns.char.resources = ns.char.resources or {}
@@ -1031,7 +1076,7 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, sourceName, 
 			end
 		end
 	end
-	critSpell = event:find("^SWING") and "melee" or select(2, ...)
+	critSpell = swing and "melee" or select(2, ...)
 	wipe(ns.shownNow)
 	-- output is what you do to others; receiving is everything that lands on you, your own
 	-- self-heals and shields included

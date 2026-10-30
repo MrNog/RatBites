@@ -52,9 +52,13 @@ local function Create()
 		GameTooltip:AddLine("Click: settings", 1, 1, 1)
 		GameTooltip:AddLine("Right-click: move boxes", 1, 1, 1)
 		GameTooltip:AddLine("Drag: move this button", 1, 1, 1)
-		-- read on hover only: the game counts every addon's memory when asked
+		-- read on hover only: the game counts every addon's memory when asked. Asked by the addon's
+		-- index: this client answers 0 when asked by name
 		UpdateAddOnMemoryUsage()
-		local kb = GetAddOnMemoryUsage(ADDON)
+		local kb = 0
+		for i = 1, GetNumAddOns() do
+			if GetAddOnInfo(i) == ADDON then kb = GetAddOnMemoryUsage(i) break end
+		end
 		GameTooltip:AddLine(" ")
 		GameTooltip:AddDoubleLine("Memory", kb >= 1024 and format("%.1f MB", kb / 1024) or format("%d KB", kb),
 			0.6, 0.6, 0.6, 1, 0.82, 0)
