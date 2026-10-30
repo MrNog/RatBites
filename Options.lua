@@ -273,7 +273,8 @@ local function ShowPage(page)
 	y = Section(page, y, "What lands on you")
 	y = Grid(page, y,
 		{ { "me", "Over me" }, { "recv", "Input box" } },
-		{ { "healMe", "Heals on me" }, { "dmgMe", "Damage on me" }, { "powerMe", "Mana, energy, rage" } })
+		{ { "healMe", "My heals on me" }, { "healOther", "Heals from others" }, { "dmgMe", "Damage on me" },
+			{ "powerMe", "My mana, energy, rage" }, { "powerOther", "Mana from others" } })
 	-- normal and crit hits, chosen for each kind of hit
 	y = Section(page, y, "Which hits")
 	y = Table(page, y, { { "normal", "Normal" }, { "crit", "Crit" } },
@@ -296,6 +297,7 @@ local function ShowPage(page)
 			local db = ns.db
 			db.show.shield, db.joinShields = v ~= "off", v == "heal"
 		end)
+	y = Check(page, y, "Show totem heals", flag("show", "totems"))
 	return y
 end
 

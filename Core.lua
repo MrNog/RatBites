@@ -3,7 +3,9 @@ local ADDON, ns = ...
 -- One profile's settings. ns.db is the active profile.
 -- route: the two Where grids. What you do: rows dmg (your damage) and heal (your heals on others), each
 -- ticking plate (over their nameplate), me (over your character) and mine (Output box). What lands on
--- you: rows healMe, dmgMe and powerMe (mana, rage, energy, runic power), each ticking me and recv
+-- you: rows healMe (your own heals and shields on you), healOther (from others), dmgMe, powerMe
+-- (mana, rage, energy, runic power from your own spells) and powerOther (from others:
+-- Replenishment, Mana Spring), each ticking me and recv
 -- (Input box).
 -- noPlateToBox: a number wanted over a nameplate that isn't on screen goes to My box instead
 -- joinShields: a shield your heal makes (Val'anyr, Divine Aegis) joins that heal's number
@@ -16,8 +18,10 @@ ns.DEFAULTS = {
 		dmg = { plate = true, me = false, mine = false },
 		heal = { plate = true, me = false, mine = false },
 		healMe = { me = false, recv = true },
+		healOther = { me = false, recv = true },
 		dmgMe = { me = false, recv = true },
 		powerMe = { me = false, recv = false },
+		powerOther = { me = false, recv = false },
 	},
 	noPlateToBox = true,
 	joinShields = true,
@@ -48,13 +52,14 @@ ns.DEFAULTS = {
 	healCritSize = 3,  -- a heal crit against a normal heal; 1 = a heal's size, no pop
 	numbers = "short",
 	-- Which hits: hits[kind] = { normal, crit } for abilities (spell), auto-attacks (swing), DoTs and
-	-- bleeds (dot) and your pet's hits (pet); misses, shields and overheal on their own
+	-- bleeds (dot) and your pet's hits (pet); misses, shields and overheal on their own; totems:
+	-- heals from totems and other non-player sources (pets excepted), on plates and on you
 	show = {
 		hits = {
 			spell = { normal = true, crit = true }, swing = { normal = true, crit = true },
 			dot = { normal = true, crit = true }, pet = { normal = true, crit = true },
 		},
-		miss = true, shield = true, overheal = true,
+		miss = true, shield = true, overheal = true, totems = false,
 	},
 }
 
@@ -78,6 +83,7 @@ ns.ROLE_DEFAULTS = {
 			dmg = { plate = true, mine = true },
 			heal = { plate = true, mine = true },
 			healMe = { me = true, recv = true },
+			healOther = { me = true, recv = true },
 			dmgMe = { recv = false },
 		},
 		show = { shield = false },
@@ -93,6 +99,7 @@ ns.ROLE_DEFAULTS = {
 			dmg = { plate = true, mine = true },
 			heal = { plate = false },
 			healMe = { recv = true },
+			healOther = { recv = true },
 			dmgMe = { recv = false },
 		},
 		classColorFor = "normal",
@@ -237,6 +244,12 @@ local function Upgrade(db)
 	if not db.healAnimSet then
 		db.healAnimation = db.animation
 		db.healAnimSet = true
+	end
+	-- heals from others on you got their own row: they start where Heals on me was
+	if not db.healOtherSet then
+		local from, to = db.route.healMe, db.route.healOther
+		to.me, to.recv = from.me, from.recv
+		db.healOtherSet = true
 	end
 	if not db.critSizeSet then
 		if db.critSize == 2.7 then db.critSize = 5 end

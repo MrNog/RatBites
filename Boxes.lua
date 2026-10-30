@@ -232,7 +232,7 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 		end
 		table.insert(box.lines, 1, last)
 		Layout(box)
-		ns.lastShown = last
+		ns.shownNow[#ns.shownNow + 1] = last
 		return last
 	end
 	local line = table.remove(box.pool) or NewLine(box)
@@ -262,7 +262,7 @@ function ns.BoxAdd(key, label, color, size, icon, amount, sign)
 	line:Show()
 	table.insert(box.lines, 1, line)
 	Layout(box)
-	ns.lastShown = line
+	ns.shownNow[#ns.shownNow + 1] = line
 	return line
 end
 

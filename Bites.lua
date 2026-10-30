@@ -59,6 +59,10 @@ function ns.FontList()
 	return list
 end
 
+-- every number and box line the combat-log line being handled showed: a heal on a plate and in a
+-- box is two, and the shield it makes joins both
+ns.shownNow = {}
+
 -- Every floating number and box line gets a new serial when it is (re)used, so a later shield can
 -- tell the number its heal made from a pooled one now showing something else.
 local serial = 0
@@ -551,7 +555,7 @@ local function Show(plate, name, x, y, label, color, size, icon, pop, column, an
 		end
 	end
 	t.label, t.shield, t.serial = label, nil, ns.NextSerial()
-	ns.lastShown = t
+	ns.shownNow[#ns.shownNow + 1] = t
 	t.anim = anim or db.animation
 	t.rise, t.duration = RISE, db.duration
 	-- lines stack a normal hit's height apart: a crit's own size would push it lines and lines up
@@ -750,7 +754,7 @@ end
 --------------------------------------------------------------------------------
 -- where a number goes: the Where grids. Your damage and heals on others (rows dmg, heal) tick any of
 -- plate (over the unit's nameplate), me (over your character) and mine (Output box); heals and damage
--- landing on you (healMe, dmgMe) tick me and recv (Input box). Nothing ticked hides that kind.
+-- landing on you (healMe, healOther, dmgMe, powerMe, powerOther) tick me and recv (Input box). Nothing ticked hides that kind.
 --------------------------------------------------------------------------------
 
 -- a colour drawn the way crits are (thick outline, sharp digit images when big), one per colour
@@ -789,7 +793,7 @@ local skipFloat, skipBox = false, false
 local function Route(row, plate, name, label, color, size, icon, pop, amount, sign)
 	local db = ns.db
 	local r = db.route[row]
-	local anim = (row == "heal" or row == "healMe" or row == "powerMe") and db.healAnimation or db.animation
+	local anim = (row == "heal" or row == "healMe" or row == "healOther" or row == "powerMe" or row == "powerOther") and db.healAnimation or db.animation
 	local shown = false
 	if r.plate and plate and not skipFloat then
 		Show(plate, name, 0, 0, label, color, size, icon, pop, false, anim)
@@ -854,7 +858,8 @@ local function Received(kind, amount, crit, icon, word, who)
 	if kind == "miss" then return end
 	if (kind == "overheal" or kind == "shield") and not Wanted("player", kind) then return end
 	local heal = HEALING[kind]
-	local row = kind == "power" and "powerMe" or heal and "healMe" or "dmgMe"
+	local row = kind == "power" and (who and "powerMe" or "powerOther")
+		or heal and (who and "healMe" or "healOther") or "dmgMe"
 	if not Ticked(ns.db.route[row]) then return end
 	local label, color
 	if kind == "power" then
@@ -922,7 +927,8 @@ local function TraceLine(e)
 		or (e.kind == "shield" and not show.shield and "Shields are off")
 		or (ns.db.noPlates[ns.SpellOwner(e.spell) or e.spell] and ns.db.noBoxes[ns.SpellOwner(e.spell) or e.spell]
 			and "unticked in Spells")
-	return format("%s %s -> %s: %s %s%s", date("%H:%M:%S", e.time), e.event, e.onMe and "you" or tostring(e.dest),
+	return format("%s %s %s -> %s: %s %s%s", date("%H:%M:%S", e.time), e.event, e.src or "?",
+		e.onMe and "you" or tostring(e.dest),
 		e.spell, e.kind and (e.kind .. " " .. tostring(e.amount or "") .. (e.crit and " crit" or "")) or "not shown",
 		stop and (" [hidden: " .. stop .. "]")
 		or r and (" [" .. (#places > 0 and table.concat(places, " ") or "nowhere") .. "]") or "")
@@ -936,7 +942,7 @@ function ns.PrintTrace()
 	end
 end
 
-ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFlags, destGUID, destName, _, ...)
+ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, sourceName, sourceFlags, destGUID, destName, _, ...)
 	local db = ns.db
 	if not db or not ns.app.enabled or not ns.playerGUID then return end
 	local who = Who(sourceGUID, sourceFlags)
@@ -951,7 +957,7 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 	end
 	local kind, amount, crit, icon, miss = Read(event, ...)
 	Trace(event, destGUID, destName, kind, amount, ...)
-	trace[traceAt].crit = crit
+	trace[traceAt].crit, trace[traceAt].src = crit, format("%s %s", tostring(sourceName), tostring(who or "other"))
 	if not kind then return end
 	-- your own auto-attacks show the weapon doing them: main hand for swings, the ranged slot for
 	-- Auto Shot, wands and throws (an empty slot keeps the plain sword)
@@ -975,7 +981,7 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 		-- every spell of yours or your pet's that makes a number is kept, so procs and effects outside
 		-- the spellbook (Judgement heals, glyph splashes, Beacon copies) can be unticked too
 		local new
-		if amount and SEEN_KINDS[kind] and type(spell) == "string" and not ns.char.seen[spell] then
+		if (amount or kind == "shield") and SEEN_KINDS[kind] and type(spell) == "string" and not ns.char.seen[spell] then
 			ns.char.seen[spell] = icon or true
 			new = true
 		end
@@ -1013,26 +1019,41 @@ ns.On("COMBAT_LOG_EVENT_UNFILTERED", function(_, event, sourceGUID, _, sourceFla
 		if amount and HEAL_SHARE[(...)] then
 			if not db.show.shield then return end
 			local h = lastHeal[destGUID]
-			local el = h and h.el
-			if db.joinShields and el and el.serial == h.serial and el:IsShown() then
-				ns.JoinShield(el, amount)
-				return
+			if db.joinShields and h and h.els then
+				local joined
+				for i, el in ipairs(h.els) do
+					if el.serial == h.serials[i] and el:IsShown() then
+						ns.JoinShield(el, amount)
+						joined = true
+					end
+				end
+				if joined then return end
 			end
 		end
 	end
 	critSpell = event:find("^SWING") and "melee" or select(2, ...)
-	ns.lastShown = nil
+	wipe(ns.shownNow)
 	-- output is what you do to others; receiving is everything that lands on you, your own
 	-- self-heals and shields included
+	-- Totem heals unticked: heals from a source that is neither a player nor a pet (totems, NPCs) stay
+	-- off, on plates and on you; a Healing Stream Totem would tick a number every two seconds
+	if HEALING[kind] and not db.show.totems
+		and band(sourceFlags or 0, bit.bor(COMBATLOG_OBJECT_TYPE_PLAYER, COMBATLOG_OBJECT_TYPE_PET)) == 0 then
+		return
+	end
 	if toMe then
 		Received(kind, amount, crit, icon, miss, who)
 	else
 		Outgoing(who, destGUID, destName, kind, amount, crit, icon, miss)
 	end
-	-- remember where your heal's number went, for the shield that follows it
-	if who and (kind == "heal" or kind == "overheal") and lastHeal[destGUID] then
-		local el = ns.lastShown
-		lastHeal[destGUID].el, lastHeal[destGUID].serial = el, el and el.serial
+	-- remember where your heal's numbers went, for the shield that follows it
+	local h = lastHeal[destGUID]
+	if who and (kind == "heal" or kind == "overheal") and h then
+		h.els, h.serials = h.els or {}, h.serials or {}
+		wipe(h.els); wipe(h.serials)
+		for i, el in ipairs(ns.shownNow) do
+			h.els[i], h.serials[i] = el, el.serial
+		end
 	end
 end)
 
