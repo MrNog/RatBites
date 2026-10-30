@@ -1191,11 +1191,36 @@ end
 
 local legend
 
+-- The Class dropdown shows another class's numbers: its class colour on normal hits and its own
+-- resource. "" is you, as your settings draw you.
+local legendClass = ""
+local LEGEND_CLASSES = { "DEATHKNIGHT", "DRUID", "HUNTER", "MAGE", "PALADIN", "PRIEST", "ROGUE", "SHAMAN", "WARLOCK",
+	"WARRIOR" }
+-- the resource a class gains most: power type and its word
+local CLASS_POWER = { WARRIOR = { 1, "Rage gained" }, ROGUE = { 3, "Energy gained" }, DEATHKNIGHT = { 6, "Runic power gained" } }
+
+local function LegendClassValues()
+	local out = { { "", "Me" } }
+	for _, class in ipairs(LEGEND_CLASSES) do
+		local c = RAID_CLASS_COLORS[class]
+		local name = LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class] or class
+		out[#out + 1] = { class, format("|cff%02x%02x%02x%s|r", c.r * 255, c.g * 255, c.b * 255, name) }
+	end
+	return out
+end
+
 -- label, colour, sample, size against a normal hit; built on each opening, so it follows the settings
 local function LegendEntries()
 	local db = ns.db
 	local critSize = db.critSize
-	local normal = db.classColorFor == "normal" and ns.classColor or COLOR.normal
+	local class = legendClass ~= "" and legendClass or select(2, UnitClass("player"))
+	local normal
+	if legendClass ~= "" then
+		normal = ns.ClassColor(legendClass)
+	else
+		normal = db.classColorFor == "normal" and ns.classColor or COLOR.normal
+	end
+	local power = CLASS_POWER[class] or { 0, "Mana gained" }
 	local crit, healCrit = COLOR.crit, COLOR.healCrit
 	return {
 		{ "Normal hit", normal, "1234", 1 },
@@ -1209,11 +1234,11 @@ local function LegendEntries()
 		{ "Shield", COLOR.shield, "+177", 0.85 },
 		{ "Damage taken", COLOR.taken, "-640", 0.9 },
 		{ "Damage taken crit", COLOR.takenCrit, "-2.1k", 1.2 },
-		{ "Mana gained", COLOR.power[0], "+1.2k", 0.9 },
+		{ power[2], COLOR.power[power[1]], "+1.2k", 0.9 },
 	}
 end
 
-local LEGEND_W, LEGEND_ROW, LEGEND_TOP = 340, 34, -44
+local LEGEND_W, LEGEND_ROW, LEGEND_TOP = 340, 34, -78
 
 local function BuildLegend()
 	local f = CreateFrame("Frame", "RatBitesColors", UIParent)
@@ -1232,6 +1257,19 @@ local function BuildLegend()
 	head:SetScript("OnDragStart", function() f:StartMoving() end)
 	head:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
 	title:SetText("RatBites colors")
+	local classLabel = f:CreateFontString(nil, "OVERLAY")
+	classLabel:SetFont(STANDARD_TEXT_FONT, 13)
+	classLabel:SetTextColor(ns.rgb(ns.C.textDim))
+	classLabel:SetPoint("TOPLEFT", 22, -48)
+	classLabel:SetText("Class")
+	local drop
+	drop = ns.Dropdown(f, 180, LegendClassValues, function() return legendClass end, function(key)
+		legendClass = key
+		drop:Refresh()
+		ns.RefreshLegend()
+	end)
+	drop:SetPoint("TOPRIGHT", -22, -42)
+	drop:Refresh()
 	f.rows = {}
 	local count = #LegendEntries()
 	for i = 1, count do
