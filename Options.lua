@@ -784,6 +784,13 @@ local function AppPage(page)
 	end
 	y = Check(page, y, "Minimap button", app("minimapButton"))
 	y = Check(page, y, "Background art", app("bgOn"))
+	-- the same size Ctrl + mouse wheel on the title bar sets
+	y = Stepper(page, y, "Window size", 0.6, 1.4, 0.05, Percent,
+		function() return ns.app.winScale or panel:GetScale() end,
+		function(v)
+			ns.app.winScale = v
+			ns.FitOptions()
+		end)
 	return y
 end
 
@@ -988,7 +995,50 @@ function ns.CreateOptions()
 	panel:SetHeight(-lowest + FOOT_H + 20)
 	refreshers[#refreshers + 1] = function() PaintArt(art, wash, panel:GetWidth(), panel:GetHeight()) end
 	Open(pages[ns.char.tab] and ns.char.tab or "show")
-	panel:SetScript("OnShow", function() for _, fn in ipairs(refreshers) do fn() end end)
+
+	-- The window's size follows the screen, as Okanvil's does: until you pick one, 0.85 or smaller
+	-- if that would not fit. Ctrl + mouse wheel on the title bar picks your own, kept for the
+	-- account in app.winScale; the screen still wins. The medallion takes the same size.
+	local SCALE_MIN, SCALE_MAX, SCALE_STEP, FIT_MARGIN = 0.6, 1.4, 0.05, 40
+	local function AutoScale()
+		local fit = math.min(0.9 * UIParent:GetWidth() / panel:GetWidth(), 0.85 * UIParent:GetHeight() / panel:GetHeight())
+		return math.max(SCALE_MIN, math.min(0.85, math.floor(fit * 20) / 20))
+	end
+	local function Fit()
+		local w, h = panel:GetWidth(), panel:GetHeight()
+		local sw, sh = UIParent:GetWidth(), UIParent:GetHeight()
+		if not (w > 1 and h > 1 and sw and sh) then return end
+		local s = math.max(0.5, math.min(ns.app.winScale or AutoScale(), (sw - FIT_MARGIN) / w, (sh - FIT_MARGIN) / h))
+		if math.abs(panel:GetScale() - s) > 0.01 then
+			panel:SetScale(s)
+			dot:SetScale(s)
+		end
+	end
+	ns.FitOptions = Fit
+	ns.On("UI_SCALE_CHANGED", Fit)
+	ns.On("DISPLAY_SIZE_CHANGED", Fit)
+	head:EnableMouseWheel(true)
+	head:SetScript("OnMouseWheel", function(_, delta)
+		if not IsControlKeyDown() then return end
+		local s = math.floor(((ns.app.winScale or panel:GetScale()) + delta * SCALE_STEP) * 20 + 0.5) / 20
+		ns.app.winScale = math.max(SCALE_MIN, math.min(SCALE_MAX, s))
+		Fit()
+		ns.RefreshOptions()
+	end)
+	head:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:AddLine("RatBites")
+		GameTooltip:AddLine("Drag: move", 1, 1, 1)
+		GameTooltip:AddLine("Ctrl + mouse wheel: window size", 1, 1, 1)
+		GameTooltip:Show()
+	end)
+	head:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	Fit()
+
+	panel:SetScript("OnShow", function()
+		Fit()
+		for _, fn in ipairs(refreshers) do fn() end
+	end)
 	panel:SetScript("OnHide", function()
 		ns.CloseDropdowns()
 		if folding then return end
